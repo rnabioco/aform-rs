@@ -1,15 +1,17 @@
 //! Editor commands for alignment manipulation.
 
-#![allow(dead_code)]
+use std::rc::Rc;
 
 use crate::app::App;
+use crate::stockholm::ShiftDirection;
 
 impl App {
     /// Insert a gap at the cursor position in the current sequence.
     pub fn insert_gap(&mut self) {
         self.save_undo_state();
 
-        if let Some(seq) = self.alignment.sequences.get_mut(self.cursor_row) {
+        if let Some(seq_rc) = self.alignment.sequences.get_mut(self.cursor_row) {
+            let seq = Rc::make_mut(seq_rc);
             seq.insert_gap(self.cursor_col, self.gap_char);
 
             // Also update associated #=GR annotations
@@ -38,7 +40,8 @@ impl App {
         let seq_id = self.alignment.sequences.get(self.cursor_row)
             .map(|s| s.id.clone());
 
-        if let Some(seq) = self.alignment.sequences.get_mut(self.cursor_row) {
+        if let Some(seq_rc) = self.alignment.sequences.get_mut(self.cursor_row) {
+            let seq = Rc::make_mut(seq_rc);
             if seq.delete_gap(self.cursor_col, &self.gap_chars) {
                 // Also update associated #=GR annotations
                 if let Some(id) = seq_id {
@@ -80,132 +83,82 @@ impl App {
         }
     }
 
-    /// Shift current sequence left.
-    pub fn shift_sequence_left(&mut self) -> bool {
-        self.save_undo_state();
-
+    /// Internal shift without undo/status - consolidated implementation.
+    fn shift_sequence_internal(&mut self, direction: ShiftDirection) -> bool {
         let seq_id = self.alignment.sequences.get(self.cursor_row)
             .map(|s| s.id.clone());
 
-        if let Some(seq) = self.alignment.sequences.get_mut(self.cursor_row) {
-            if seq.shift_left(self.cursor_col, &self.gap_chars) {
+        if let Some(seq_rc) = self.alignment.sequences.get_mut(self.cursor_row) {
+            let seq = Rc::make_mut(seq_rc);
+            if seq.shift(self.cursor_col, direction, &self.gap_chars) {
                 // Also shift associated #=GR annotations
                 if let Some(id) = seq_id {
                     if let Some(annotations) = self.alignment.residue_annotations.get_mut(&id) {
                         for ann in annotations {
                             let mut temp = crate::stockholm::Sequence::new("temp", ann.data.clone());
-                            temp.shift_left(self.cursor_col, &self.gap_chars);
-                            ann.data = temp.data;
+                            temp.shift(self.cursor_col, direction, &self.gap_chars);
+                            ann.data = temp.data();
                         }
                     }
                 }
-                self.mark_modified();
                 return true;
             }
         }
-
-        self.set_status("Cannot shift left (no gap found)");
         false
+    }
+
+    /// Shift current sequence in the given direction with undo support.
+    fn shift_sequence_with_undo(&mut self, direction: ShiftDirection) -> bool {
+        self.save_undo_state();
+        if self.shift_sequence_internal(direction) {
+            self.mark_modified();
+            true
+        } else {
+            let dir_str = match direction {
+                ShiftDirection::Left => "left",
+                ShiftDirection::Right => "right",
+            };
+            self.set_status(format!("Cannot shift {} (no gap found)", dir_str));
+            false
+        }
+    }
+
+    /// Shift current sequence left.
+    pub fn shift_sequence_left(&mut self) -> bool {
+        self.shift_sequence_with_undo(ShiftDirection::Left)
     }
 
     /// Shift current sequence right.
     pub fn shift_sequence_right(&mut self) -> bool {
+        self.shift_sequence_with_undo(ShiftDirection::Right)
+    }
+
+    /// Throw sequence in the given direction (shift as far as possible).
+    fn throw_sequence(&mut self, direction: ShiftDirection) {
         self.save_undo_state();
-
-        let seq_id = self.alignment.sequences.get(self.cursor_row)
-            .map(|s| s.id.clone());
-
-        if let Some(seq) = self.alignment.sequences.get_mut(self.cursor_row) {
-            if seq.shift_right(self.cursor_col, &self.gap_chars) {
-                // Also shift associated #=GR annotations
-                if let Some(id) = seq_id {
-                    if let Some(annotations) = self.alignment.residue_annotations.get_mut(&id) {
-                        for ann in annotations {
-                            let mut temp = crate::stockholm::Sequence::new("temp", ann.data.clone());
-                            temp.shift_right(self.cursor_col, &self.gap_chars);
-                            ann.data = temp.data;
-                        }
-                    }
-                }
-                self.mark_modified();
-                return true;
-            }
+        let mut shifted = false;
+        while self.shift_sequence_internal(direction) {
+            shifted = true;
         }
-
-        self.set_status("Cannot shift right (no gap found)");
-        false
+        if shifted {
+            self.mark_modified();
+        } else {
+            let dir_str = match direction {
+                ShiftDirection::Left => "left",
+                ShiftDirection::Right => "right",
+            };
+            self.set_status(format!("Cannot throw {} (no gaps found)", dir_str));
+        }
     }
 
     /// Throw sequence left (shift as far as possible).
     pub fn throw_sequence_left(&mut self) {
-        self.save_undo_state();
-        let mut shifted = false;
-        while self.shift_sequence_left_internal() {
-            shifted = true;
-        }
-        if shifted {
-            self.mark_modified();
-        } else {
-            self.set_status("Cannot throw left (no gaps found)");
-        }
+        self.throw_sequence(ShiftDirection::Left)
     }
 
     /// Throw sequence right (shift as far as possible).
     pub fn throw_sequence_right(&mut self) {
-        self.save_undo_state();
-        let mut shifted = false;
-        while self.shift_sequence_right_internal() {
-            shifted = true;
-        }
-        if shifted {
-            self.mark_modified();
-        } else {
-            self.set_status("Cannot throw right (no gaps found)");
-        }
-    }
-
-    /// Internal shift left without undo/status.
-    fn shift_sequence_left_internal(&mut self) -> bool {
-        let seq_id = self.alignment.sequences.get(self.cursor_row)
-            .map(|s| s.id.clone());
-
-        if let Some(seq) = self.alignment.sequences.get_mut(self.cursor_row) {
-            if seq.shift_left(self.cursor_col, &self.gap_chars) {
-                if let Some(id) = seq_id {
-                    if let Some(annotations) = self.alignment.residue_annotations.get_mut(&id) {
-                        for ann in annotations {
-                            let mut temp = crate::stockholm::Sequence::new("temp", ann.data.clone());
-                            temp.shift_left(self.cursor_col, &self.gap_chars);
-                            ann.data = temp.data;
-                        }
-                    }
-                }
-                return true;
-            }
-        }
-        false
-    }
-
-    /// Internal shift right without undo/status.
-    fn shift_sequence_right_internal(&mut self) -> bool {
-        let seq_id = self.alignment.sequences.get(self.cursor_row)
-            .map(|s| s.id.clone());
-
-        if let Some(seq) = self.alignment.sequences.get_mut(self.cursor_row) {
-            if seq.shift_right(self.cursor_col, &self.gap_chars) {
-                if let Some(id) = seq_id {
-                    if let Some(annotations) = self.alignment.residue_annotations.get_mut(&id) {
-                        for ann in annotations {
-                            let mut temp = crate::stockholm::Sequence::new("temp", ann.data.clone());
-                            temp.shift_right(self.cursor_col, &self.gap_chars);
-                            ann.data = temp.data;
-                        }
-                    }
-                }
-                return true;
-            }
-        }
-        false
+        self.throw_sequence(ShiftDirection::Right)
     }
 
     /// Undo the last action.
@@ -272,7 +225,7 @@ impl App {
     pub fn uppercase_alignment(&mut self) {
         self.save_undo_state();
         for seq in &mut self.alignment.sequences {
-            seq.data = seq.data.to_uppercase();
+            Rc::make_mut(seq).to_uppercase();
         }
         self.mark_modified();
     }
@@ -281,7 +234,7 @@ impl App {
     pub fn lowercase_alignment(&mut self) {
         self.save_undo_state();
         for seq in &mut self.alignment.sequences {
-            seq.data = seq.data.to_lowercase();
+            Rc::make_mut(seq).to_lowercase();
         }
         self.mark_modified();
     }
@@ -290,7 +243,9 @@ impl App {
     pub fn convert_t_to_u(&mut self) {
         self.save_undo_state();
         for seq in &mut self.alignment.sequences {
-            seq.data = seq.data.replace('T', "U").replace('t', "u");
+            let seq = Rc::make_mut(seq);
+            seq.replace_char('T', 'U');
+            seq.replace_char('t', 'u');
         }
         self.mark_modified();
     }
@@ -299,7 +254,9 @@ impl App {
     pub fn convert_u_to_t(&mut self) {
         self.save_undo_state();
         for seq in &mut self.alignment.sequences {
-            seq.data = seq.data.replace('U', "T").replace('u', "t");
+            let seq = Rc::make_mut(seq);
+            seq.replace_char('U', 'T');
+            seq.replace_char('u', 't');
         }
         self.mark_modified();
     }

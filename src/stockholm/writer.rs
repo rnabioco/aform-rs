@@ -1,7 +1,5 @@
 //! Stockholm format writer.
 
-#![allow(dead_code)]
-
 use std::io::{Result, Write};
 
 use super::types::*;
@@ -39,7 +37,7 @@ pub fn write<W: Write>(alignment: &Alignment, mut writer: W) -> Result<()> {
 
     // Sequences and their residue annotations (#=GR)
     for seq in &alignment.sequences {
-        writeln!(writer, "{:padding$} {}", seq.id, seq.data)?;
+        writeln!(writer, "{:padding$} {}", seq.id, seq.data())?;
 
         // Per-residue annotations for this sequence
         if let Some(annotations) = alignment.residue_annotations.get(&seq.id) {
@@ -61,6 +59,7 @@ pub fn write<W: Write>(alignment: &Alignment, mut writer: W) -> Result<()> {
 }
 
 /// Write a Stockholm alignment to a string.
+#[allow(dead_code)] // API convenience function
 pub fn write_string(alignment: &Alignment) -> Result<String> {
     let mut buffer = Vec::new();
     write(alignment, &mut buffer)?;
@@ -77,6 +76,7 @@ pub fn write_file(alignment: &Alignment, path: &std::path::Path) -> Result<()> {
 mod tests {
     use super::*;
     use crate::stockholm::parser;
+    use std::rc::Rc;
 
     #[test]
     fn test_roundtrip() {
@@ -97,15 +97,15 @@ seq2/1-10  ACGU..ACGU
         let reparsed = parser::parse_str(&output).unwrap();
 
         assert_eq!(alignment.sequences.len(), reparsed.sequences.len());
-        assert_eq!(alignment.sequences[0].data, reparsed.sequences[0].data);
+        assert_eq!(alignment.sequences[0].data(), reparsed.sequences[0].data());
         assert_eq!(alignment.ss_cons(), reparsed.ss_cons());
     }
 
     #[test]
     fn test_write_simple() {
         let mut alignment = Alignment::new();
-        alignment.sequences.push(Sequence::new("seq1", "ACGU"));
-        alignment.sequences.push(Sequence::new("seq2", "ACGU"));
+        alignment.sequences.push(Rc::new(Sequence::new("seq1", "ACGU")));
+        alignment.sequences.push(Rc::new(Sequence::new("seq2", "ACGU")));
         alignment.column_annotations.push(ColumnAnnotation {
             tag: "SS_cons".to_string(),
             data: "<><>".to_string(),

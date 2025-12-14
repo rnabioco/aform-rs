@@ -1,7 +1,5 @@
 //! Color scheme implementations for alignment display.
 
-#![allow(dead_code)]
-
 use ratatui::style::Color;
 
 use crate::app::ColorScheme;
@@ -136,8 +134,8 @@ fn calculate_conservation(col: usize, alignment: &Alignment, gap_chars: &[char])
     let mut total = 0;
 
     for seq in &alignment.sequences {
-        if let Some(ch) = seq.data.chars().nth(col) {
-            let upper = ch.to_ascii_uppercase();
+        if let Some(ch) = seq.get(col) {
+            let upper: char = ch.to_ascii_uppercase();
             if !gap_chars.contains(&ch) {
                 *counts.entry(upper).or_insert(0) += 1;
                 total += 1;
@@ -171,7 +169,7 @@ fn get_compensatory_color(
     let ref_seq = alignment.sequences.get(reference_seq)?;
     let query_seq = alignment.sequences.get(row)?;
 
-    let change = analyze_compensatory(&ref_seq.data, &query_seq.data, col, cache, gap_chars);
+    let change = analyze_compensatory(&ref_seq.data(), &query_seq.data(), col, cache, gap_chars);
 
     match change {
         CompensatoryChange::Unchanged => None,
@@ -185,6 +183,7 @@ fn get_compensatory_color(
 }
 
 /// Get consensus character for a column.
+#[allow(dead_code)] // API utility for future consensus display
 pub fn get_consensus_char(col: usize, alignment: &Alignment, gap_chars: &[char]) -> char {
     if alignment.sequences.is_empty() {
         return ' ';
@@ -193,8 +192,8 @@ pub fn get_consensus_char(col: usize, alignment: &Alignment, gap_chars: &[char])
     let mut counts: std::collections::HashMap<char, usize> = std::collections::HashMap::new();
 
     for seq in &alignment.sequences {
-        if let Some(ch) = seq.data.chars().nth(col) {
-            let upper = ch.to_ascii_uppercase();
+        if let Some(ch) = seq.get(col) {
+            let upper: char = ch.to_ascii_uppercase();
             if !gap_chars.contains(&ch) {
                 *counts.entry(upper).or_insert(0) += 1;
             }
@@ -212,6 +211,7 @@ pub fn get_consensus_char(col: usize, alignment: &Alignment, gap_chars: &[char])
 mod tests {
     use super::*;
     use crate::stockholm::Sequence;
+    use std::rc::Rc;
 
     #[test]
     fn test_base_colors() {
@@ -227,9 +227,9 @@ mod tests {
     #[test]
     fn test_conservation() {
         let mut alignment = Alignment::new();
-        alignment.sequences.push(Sequence::new("s1", "AAAA"));
-        alignment.sequences.push(Sequence::new("s2", "AAAA"));
-        alignment.sequences.push(Sequence::new("s3", "AACA"));
+        alignment.sequences.push(Rc::new(Sequence::new("s1", "AAAA")));
+        alignment.sequences.push(Rc::new(Sequence::new("s2", "AAAA")));
+        alignment.sequences.push(Rc::new(Sequence::new("s3", "AACA")));
 
         let gap_chars = ['.', '-'];
 

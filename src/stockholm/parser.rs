@@ -1,9 +1,8 @@
 //! Stockholm format parser.
 
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read};
+use std::rc::Rc;
 use thiserror::Error;
 
 use super::types::*;
@@ -16,6 +15,7 @@ pub enum ParseError {
     Io(#[from] std::io::Error),
     #[error("Unexpected end of file")]
     UnexpectedEof,
+    #[allow(dead_code)] // Error variant for detailed error messages
     #[error("Invalid line format: {0}")]
     InvalidLine(String),
     #[error("Inconsistent sequence lengths")]
@@ -152,7 +152,7 @@ pub fn parse<R: Read>(reader: R) -> Result<Alignment, ParseError> {
     // Build sequences in order
     for seqid in seq_order {
         if let Some(data) = seq_data.remove(&seqid) {
-            alignment.sequences.push(Sequence::new(seqid, data));
+            alignment.sequences.push(Rc::new(Sequence::new(seqid, data)));
         }
     }
 
@@ -179,6 +179,7 @@ pub fn parse<R: Read>(reader: R) -> Result<Alignment, ParseError> {
 }
 
 /// Parse a Stockholm alignment from a string.
+#[allow(dead_code)] // API convenience function
 pub fn parse_str(s: &str) -> Result<Alignment, ParseError> {
     parse(s.as_bytes())
 }
@@ -207,7 +208,7 @@ seq2/1-10    ACGU..ACGU
         let alignment = parse_str(SIMPLE_ALIGNMENT).unwrap();
         assert_eq!(alignment.sequences.len(), 2);
         assert_eq!(alignment.sequences[0].id, "seq1/1-10");
-        assert_eq!(alignment.sequences[0].data, "ACGU..ACGU");
+        assert_eq!(alignment.sequences[0].data(), "ACGU..ACGU");
         assert_eq!(alignment.width(), 10);
         assert_eq!(alignment.ss_cons(), Some("<<<<..>>>>"));
     }
@@ -235,7 +236,7 @@ seq2    WXYZ
     fn test_parse_blocked() {
         let alignment = parse_str(BLOCKED_ALIGNMENT).unwrap();
         assert_eq!(alignment.sequences.len(), 2);
-        assert_eq!(alignment.sequences[0].data, "ACGUWXYZ");
+        assert_eq!(alignment.sequences[0].data(), "ACGUWXYZ");
         assert_eq!(alignment.width(), 8);
     }
 

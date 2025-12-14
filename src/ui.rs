@@ -239,7 +239,7 @@ fn render_alignment_pane(
         spans.push(Span::styled(id_display, id_style));
 
         // Sequence data
-        let seq_chars: Vec<char> = seq.data.chars().collect();
+        let seq_chars: Vec<char> = seq.chars().to_vec();
         for col in viewport_col..(viewport_col + seq_width).min(seq_chars.len()) {
             let ch = seq_chars[col];
             // Only show cursor in active pane

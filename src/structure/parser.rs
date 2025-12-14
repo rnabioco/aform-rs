@@ -8,6 +8,7 @@ pub enum StructureError {
     UnmatchedOpen(usize),
     #[error("Unmatched closing bracket at position {0}")]
     UnmatchedClose(usize),
+    #[allow(dead_code)] // Variant for future pseudoknot validation
     #[error("Bracket type mismatch at position {0}")]
     BracketMismatch(usize),
 }
@@ -29,16 +30,19 @@ const OPEN_BRACKETS: &[char] = &['<', '(', '[', '{'];
 const CLOSE_BRACKETS: &[char] = &['>', ')', ']', '}'];
 
 /// Check if a character is an opening bracket.
+#[allow(dead_code)] // API utility for bracket validation
 pub fn is_open_bracket(c: char) -> bool {
     OPEN_BRACKETS.contains(&c)
 }
 
 /// Check if a character is a closing bracket.
+#[allow(dead_code)] // API utility for bracket validation
 pub fn is_close_bracket(c: char) -> bool {
     CLOSE_BRACKETS.contains(&c)
 }
 
 /// Get the matching closing bracket for an opening bracket.
+#[allow(dead_code)] // API utility for bracket matching
 pub fn matching_close(open: char) -> Option<char> {
     OPEN_BRACKETS
         .iter()
@@ -47,6 +51,7 @@ pub fn matching_close(open: char) -> Option<char> {
 }
 
 /// Get the matching opening bracket for a closing bracket.
+#[allow(dead_code)] // API utility for bracket matching
 pub fn matching_open(close: char) -> Option<char> {
     CLOSE_BRACKETS
         .iter()
@@ -121,6 +126,7 @@ fn assign_helix_ids(pairs: &mut [BasePair]) {
 }
 
 /// Find the paired position for a given column.
+#[allow(dead_code)] // API utility, used in tests
 pub fn find_pair(pairs: &[BasePair], col: usize) -> Option<usize> {
     for pair in pairs {
         if pair.left == col {
@@ -134,6 +140,7 @@ pub fn find_pair(pairs: &[BasePair], col: usize) -> Option<usize> {
 }
 
 /// Get the helix ID for a given column.
+#[allow(dead_code)] // API utility for structure analysis
 pub fn get_helix_id(pairs: &[BasePair], col: usize) -> Option<usize> {
     for pair in pairs {
         if pair.left == col || pair.right == col {
@@ -144,11 +151,13 @@ pub fn get_helix_id(pairs: &[BasePair], col: usize) -> Option<usize> {
 }
 
 /// Count the number of unique helices.
+#[allow(dead_code)] // API utility for structure analysis
 pub fn count_helices(pairs: &[BasePair]) -> usize {
     pairs.iter().map(|p| p.helix_id).max().map(|m| m + 1).unwrap_or(0)
 }
 
 /// Check if the structure string is valid (balanced brackets).
+#[allow(dead_code)] // API utility for structure validation
 pub fn is_valid_structure(ss: &str) -> bool {
     parse_structure(ss).is_ok()
 }

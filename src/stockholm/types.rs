@@ -1,17 +1,26 @@
 //! Core types for Stockholm format alignments.
 
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::rc::Rc;
+
+/// Direction for shift operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShiftDirection {
+    Left,
+    Right,
+}
 
 /// A Stockholm format alignment.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+///
+/// Sequences are wrapped in Rc for efficient copy-on-write cloning during undo/redo.
+/// When an Alignment is cloned, sequences share data until modified.
+#[derive(Debug, Clone, Default)]
 pub struct Alignment {
     /// File-level annotations (#=GF)
     pub file_annotations: Vec<FileAnnotation>,
-    /// Sequences in the alignment
-    pub sequences: Vec<Sequence>,
+    /// Sequences in the alignment (Rc-wrapped for structural sharing)
+    pub sequences: Vec<Rc<Sequence>>,
     /// Per-sequence annotations (#=GS)
     pub sequence_annotations: HashMap<String, Vec<SequenceAnnotation>>,
     /// Per-column annotations (#=GC)
@@ -20,13 +29,85 @@ pub struct Alignment {
     pub residue_annotations: HashMap<String, Vec<ResidueAnnotation>>,
 }
 
+// Custom Serde for Alignment - unwrap Rc for serialization
+impl serde::Serialize for Alignment {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("Alignment", 5)?;
+        state.serialize_field("file_annotations", &self.file_annotations)?;
+        // Serialize sequences by dereferencing Rc
+        let seqs: Vec<&Sequence> = self.sequences.iter().map(|rc| rc.as_ref()).collect();
+        state.serialize_field("sequences", &seqs)?;
+        state.serialize_field("sequence_annotations", &self.sequence_annotations)?;
+        state.serialize_field("column_annotations", &self.column_annotations)?;
+        state.serialize_field("residue_annotations", &self.residue_annotations)?;
+        state.end()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Alignment {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct AlignmentHelper {
+            file_annotations: Vec<FileAnnotation>,
+            sequences: Vec<Sequence>,
+            sequence_annotations: HashMap<String, Vec<SequenceAnnotation>>,
+            column_annotations: Vec<ColumnAnnotation>,
+            residue_annotations: HashMap<String, Vec<ResidueAnnotation>>,
+        }
+        let helper = AlignmentHelper::deserialize(deserializer)?;
+        Ok(Alignment {
+            file_annotations: helper.file_annotations,
+            sequences: helper.sequences.into_iter().map(Rc::new).collect(),
+            sequence_annotations: helper.sequence_annotations,
+            column_annotations: helper.column_annotations,
+            residue_annotations: helper.residue_annotations,
+        })
+    }
+}
+
 /// A sequence in the alignment.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Sequence {
     /// Sequence identifier (may include coordinates like "id/start-end")
     pub id: String,
-    /// Sequence data (with gaps)
-    pub data: String,
+    /// Sequence data (with gaps) - stored as Vec<char> for O(1) access
+    chars: Vec<char>,
+}
+
+// Custom Serde for Sequence - serialize chars as String
+impl serde::Serialize for Sequence {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("Sequence", 2)?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field("data", &self.data())?;
+        state.end()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Sequence {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct SequenceHelper {
+            id: String,
+            data: String,
+        }
+        let helper = SequenceHelper::deserialize(deserializer)?;
+        Ok(Sequence::new(helper.id, helper.data))
+    }
 }
 
 /// File-level annotation (#=GF tag value).
@@ -63,6 +144,16 @@ impl Alignment {
         Self::default()
     }
 
+    /// Get a mutable reference to a sequence, cloning if necessary (copy-on-write).
+    ///
+    /// This uses `Rc::make_mut` to implement structural sharing: if this is the only
+    /// reference to the sequence, it returns a direct mutable reference. Otherwise,
+    /// it clones the sequence first.
+    #[allow(dead_code)] // Public API for copy-on-write access
+    pub fn sequence_mut(&mut self, index: usize) -> Option<&mut Sequence> {
+        self.sequences.get_mut(index).map(Rc::make_mut)
+    }
+
     /// Get the number of sequences.
     pub fn num_sequences(&self) -> usize {
         self.sequences.len()
@@ -70,7 +161,7 @@ impl Alignment {
 
     /// Get the alignment width (number of columns).
     pub fn width(&self) -> usize {
-        self.sequences.first().map(|s| s.data.len()).unwrap_or(0)
+        self.sequences.first().map(|s| s.len()).unwrap_or(0)
     }
 
     /// Get the consensus secondary structure annotation if present.
@@ -82,6 +173,7 @@ impl Alignment {
     }
 
     /// Get a mutable reference to the consensus secondary structure.
+    #[allow(dead_code)] // API for structure editing
     pub fn ss_cons_mut(&mut self) -> Option<&mut String> {
         self.column_annotations
             .iter_mut()
@@ -90,6 +182,7 @@ impl Alignment {
     }
 
     /// Get the reference sequence annotation if present.
+    #[allow(dead_code)] // API for reference sequence access
     pub fn rf(&self) -> Option<&str> {
         self.column_annotations
             .iter()
@@ -102,8 +195,8 @@ impl Alignment {
         if self.sequences.is_empty() {
             return true;
         }
-        let width = self.sequences[0].data.len();
-        self.sequences.iter().all(|s| s.data.len() == width)
+        let width = self.sequences[0].len();
+        self.sequences.iter().all(|s| s.len() == width)
             && self
                 .column_annotations
                 .iter()
@@ -122,9 +215,7 @@ impl Alignment {
     /// Insert a gap at a specific position in all sequences and annotations.
     pub fn insert_gap_column(&mut self, col: usize, gap_char: char) {
         for seq in &mut self.sequences {
-            if col <= seq.data.len() {
-                seq.data.insert(col, gap_char);
-            }
+            Rc::make_mut(seq).insert_gap(col, gap_char);
         }
         for ann in &mut self.column_annotations {
             if col <= ann.data.len() {
@@ -142,11 +233,9 @@ impl Alignment {
 
     /// Delete a column if it contains only gaps in all sequences.
     pub fn delete_gap_column(&mut self, col: usize, gap_chars: &[char]) -> bool {
-        // Check if column is all gaps
+        // Check if column is all gaps (O(1) per sequence now)
         let all_gaps = self.sequences.iter().all(|s| {
-            s.data
-                .chars()
-                .nth(col)
+            s.get(col)
                 .map(|c| gap_chars.contains(&c))
                 .unwrap_or(false)
         });
@@ -157,8 +246,8 @@ impl Alignment {
 
         // Delete from all sequences
         for seq in &mut self.sequences {
-            if col < seq.data.len() {
-                seq.data.remove(col);
+            if col < seq.len() {
+                Rc::make_mut(seq).chars_mut().remove(col);
             }
         }
         for ann in &mut self.column_annotations {
@@ -177,20 +266,16 @@ impl Alignment {
         true
     }
 
-    /// Get character at a specific position.
+    /// Get character at a specific position (O(1)).
     pub fn get_char(&self, row: usize, col: usize) -> Option<char> {
-        self.sequences.get(row)?.data.chars().nth(col)
+        self.sequences.get(row)?.get(col)
     }
 
-    /// Set character at a specific position.
+    /// Set character at a specific position (O(1)).
+    #[allow(dead_code)] // API for direct character editing
     pub fn set_char(&mut self, row: usize, col: usize, ch: char) -> bool {
         if let Some(seq) = self.sequences.get_mut(row) {
-            let mut chars: Vec<char> = seq.data.chars().collect();
-            if col < chars.len() {
-                chars[col] = ch;
-                seq.data = chars.into_iter().collect();
-                return true;
-            }
+            return Rc::make_mut(seq).set(col, ch);
         }
         false
     }
@@ -201,77 +286,124 @@ impl Sequence {
     pub fn new(id: impl Into<String>, data: impl Into<String>) -> Self {
         Self {
             id: id.into(),
-            data: data.into(),
+            chars: data.into().chars().collect(),
         }
     }
 
+    // === Accessor methods ===
+
+    /// Get sequence data as a String (for output/serialization).
+    pub fn data(&self) -> String {
+        self.chars.iter().collect()
+    }
+
+    /// Get sequence characters as a slice.
+    pub fn chars(&self) -> &[char] {
+        &self.chars
+    }
+
+    /// Get mutable access to sequence characters.
+    pub fn chars_mut(&mut self) -> &mut Vec<char> {
+        &mut self.chars
+    }
+
+    /// Get the length of the sequence.
+    pub fn len(&self) -> usize {
+        self.chars.len()
+    }
+
+    /// Check if the sequence is empty.
+    #[allow(dead_code)] // API completeness
+    pub fn is_empty(&self) -> bool {
+        self.chars.is_empty()
+    }
+
+    /// Get character at a specific position (O(1)).
+    pub fn get(&self, index: usize) -> Option<char> {
+        self.chars.get(index).copied()
+    }
+
+    /// Set character at a specific position (O(1)).
+    pub fn set(&mut self, index: usize, ch: char) -> bool {
+        if index < self.chars.len() {
+            self.chars[index] = ch;
+            true
+        } else {
+            false
+        }
+    }
+
+    // === Mutation methods ===
+
     /// Insert a gap at a specific position.
     pub fn insert_gap(&mut self, pos: usize, gap_char: char) {
-        if pos <= self.data.len() {
-            self.data.insert(pos, gap_char);
+        if pos <= self.chars.len() {
+            self.chars.insert(pos, gap_char);
         }
     }
 
     /// Delete a character at a specific position if it's a gap.
     pub fn delete_gap(&mut self, pos: usize, gap_chars: &[char]) -> bool {
-        if let Some(ch) = self.data.chars().nth(pos) {
+        if let Some(&ch) = self.chars.get(pos) {
             if gap_chars.contains(&ch) {
-                self.data.remove(pos);
+                self.chars.remove(pos);
                 return true;
             }
         }
         false
     }
 
-    /// Shift sequence left by one position (moves content to next gap on left).
-    pub fn shift_left(&mut self, col: usize, gap_chars: &[char]) -> bool {
-        let chars: Vec<char> = self.data.chars().collect();
-
-        // Find the nearest gap to the left
-        let mut gap_pos = None;
-        for i in (0..col).rev() {
-            if gap_chars.contains(&chars[i]) {
-                gap_pos = Some(i);
-                break;
-            }
-        }
+    /// Shift sequence in the given direction (moves content to next gap).
+    pub fn shift(&mut self, col: usize, direction: ShiftDirection, gap_chars: &[char]) -> bool {
+        // Find the nearest gap in the specified direction
+        let gap_pos = match direction {
+            ShiftDirection::Left => (0..col).rev().find(|&i| gap_chars.contains(&self.chars[i])),
+            ShiftDirection::Right => ((col + 1)..self.chars.len()).find(|&i| gap_chars.contains(&self.chars[i])),
+        };
 
         if let Some(gp) = gap_pos {
-            // Remove gap at gp, then insert gap after the character at col
-            // After removal, indices shift left, so we insert at col (not col-1)
-            let mut new_chars = chars.clone();
-            new_chars.remove(gp);
-            new_chars.insert(col, gap_chars[0]);
-            self.data = new_chars.into_iter().collect();
+            // Remove gap at gp, insert gap at col
+            self.chars.remove(gp);
+            self.chars.insert(col, gap_chars[0]);
             return true;
         }
 
         false
     }
 
-    /// Shift sequence right by one position (moves content to next gap on right).
-    pub fn shift_right(&mut self, col: usize, gap_chars: &[char]) -> bool {
-        let chars: Vec<char> = self.data.chars().collect();
+    /// Shift sequence left by one position (moves content to next gap on left).
+    #[allow(dead_code)] // Convenience method, used by tests
+    pub fn shift_left(&mut self, col: usize, gap_chars: &[char]) -> bool {
+        self.shift(col, ShiftDirection::Left, gap_chars)
+    }
 
-        // Find the nearest gap to the right
-        let mut gap_pos = None;
-        for i in (col + 1)..chars.len() {
-            if gap_chars.contains(&chars[i]) {
-                gap_pos = Some(i);
-                break;
+    /// Shift sequence right by one position (moves content to next gap on right).
+    #[allow(dead_code)] // Convenience method, used by tests
+    pub fn shift_right(&mut self, col: usize, gap_chars: &[char]) -> bool {
+        self.shift(col, ShiftDirection::Right, gap_chars)
+    }
+
+    /// Convert sequence to uppercase.
+    pub fn to_uppercase(&mut self) {
+        for ch in &mut self.chars {
+            *ch = ch.to_ascii_uppercase();
+        }
+    }
+
+    /// Convert sequence to lowercase.
+    pub fn to_lowercase(&mut self) {
+        for ch in &mut self.chars {
+            *ch = ch.to_ascii_lowercase();
+        }
+    }
+
+    /// Replace all occurrences of one character with another.
+    pub fn replace_char(&mut self, from: char, to: char) {
+        for ch in &mut self.chars {
+            if *ch == from {
+                *ch = to;
             }
         }
-
-        if let Some(gp) = gap_pos {
-            // Remove gap at gp, insert gap at col
-            let mut new_chars = chars.clone();
-            new_chars.remove(gp);
-            new_chars.insert(col, gap_chars[0]);
-            self.data = new_chars.into_iter().collect();
-            return true;
-        }
-
-        false
     }
 }
 
@@ -282,30 +414,30 @@ mod tests {
     #[test]
     fn test_alignment_width() {
         let mut alignment = Alignment::new();
-        alignment.sequences.push(Sequence::new("seq1", "ACGU..ACGU"));
-        alignment.sequences.push(Sequence::new("seq2", "ACGU..ACGU"));
+        alignment.sequences.push(Rc::new(Sequence::new("seq1", "ACGU..ACGU")));
+        alignment.sequences.push(Rc::new(Sequence::new("seq2", "ACGU..ACGU")));
         assert_eq!(alignment.width(), 10);
     }
 
     #[test]
     fn test_insert_gap_column() {
         let mut alignment = Alignment::new();
-        alignment.sequences.push(Sequence::new("seq1", "ACGU"));
+        alignment.sequences.push(Rc::new(Sequence::new("seq1", "ACGU")));
         alignment.insert_gap_column(2, '.');
-        assert_eq!(alignment.sequences[0].data, "AC.GU");
+        assert_eq!(alignment.sequences[0].data(), "AC.GU");
     }
 
     #[test]
     fn test_sequence_shift_left() {
         let mut seq = Sequence::new("test", "A.CGU");
         assert!(seq.shift_left(2, &['.']));
-        assert_eq!(seq.data, "AC.GU");
+        assert_eq!(seq.data(), "AC.GU");
     }
 
     #[test]
     fn test_sequence_shift_right() {
         let mut seq = Sequence::new("test", "ACG.U");
         assert!(seq.shift_right(2, &['.']));
-        assert_eq!(seq.data, "AC.GU");
+        assert_eq!(seq.data(), "AC.GU");
     }
 }

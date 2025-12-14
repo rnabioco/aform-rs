@@ -82,79 +82,69 @@ pub enum ActivePane {
 
 /// Application state.
 pub struct App {
+    // === Public - Core data ===
     /// Current alignment.
     pub alignment: Alignment,
     /// File path (if loaded from file).
     pub file_path: Option<PathBuf>,
-    /// Whether the alignment has been modified.
-    pub modified: bool,
+    /// Structure cache.
+    pub structure_cache: StructureCache,
 
-    /// Current cursor row (sequence index).
-    pub cursor_row: usize,
-    /// Current cursor column.
-    pub cursor_col: usize,
-
-    /// Viewport offset (row).
-    pub viewport_row: usize,
-    /// Viewport offset (column).
-    pub viewport_col: usize,
-
-    /// Current editor mode.
-    pub mode: Mode,
-    /// Command line buffer (for command mode).
-    pub command_buffer: String,
-    /// Command history.
-    pub command_history: Vec<String>,
-    /// Current position in command history (None = new command).
-    pub command_history_index: Option<usize>,
-    /// Saved command buffer when browsing history.
-    pub command_history_saved: String,
-    /// Status message.
-    pub status_message: Option<String>,
-
+    // === Public - User configuration ===
     /// Gap character.
     pub gap_char: char,
     /// Characters considered as gaps.
     pub gap_chars: Vec<char>,
-
     /// Color scheme.
     pub color_scheme: ColorScheme,
-
-    /// Structure cache.
-    pub structure_cache: StructureCache,
-
-    /// Undo/redo history.
-    pub history: History,
-
-    /// Should quit.
-    pub should_quit: bool,
-
     /// Show help overlay.
     pub show_help: bool,
-
     /// Show position ruler at top.
     pub show_ruler: bool,
-
     /// Show row numbers.
     pub show_row_numbers: bool,
-
     /// Reference sequence index for compensatory coloring.
     pub reference_seq: usize,
-
-    /// Numeric count buffer for vim-style count prefixes (e.g., 50|).
-    pub count_buffer: String,
-
     /// Split screen mode (None = single pane).
     pub split_mode: Option<SplitMode>,
-
     /// Which pane is active in split mode.
     pub active_pane: ActivePane,
 
-    /// Secondary pane viewport row.
-    pub secondary_viewport_row: usize,
+    // === Crate-internal ===
+    /// Command line buffer (for command mode).
+    pub(crate) command_buffer: String,
+    /// Should quit.
+    pub(crate) should_quit: bool,
 
+    // === Internal state (crate-visible for impl App blocks) ===
+    /// Whether the alignment has been modified.
+    pub(crate) modified: bool,
+    /// Current cursor row (sequence index).
+    pub(crate) cursor_row: usize,
+    /// Current cursor column.
+    pub(crate) cursor_col: usize,
+    /// Viewport offset (row).
+    pub(crate) viewport_row: usize,
+    /// Viewport offset (column).
+    pub(crate) viewport_col: usize,
+    /// Current editor mode.
+    pub(crate) mode: Mode,
+    /// Command history.
+    pub(crate) command_history: Vec<String>,
+    /// Current position in command history (None = new command).
+    pub(crate) command_history_index: Option<usize>,
+    /// Saved command buffer when browsing history.
+    pub(crate) command_history_saved: String,
+    /// Status message.
+    pub(crate) status_message: Option<String>,
+    /// Undo/redo history.
+    pub(crate) history: History,
+    /// Numeric count buffer for vim-style count prefixes (e.g., 50|).
+    pub(crate) count_buffer: String,
+    /// Secondary pane viewport row.
+    pub(crate) secondary_viewport_row: usize,
     /// Secondary pane viewport column.
-    pub secondary_viewport_col: usize,
+    pub(crate) secondary_viewport_col: usize,
 }
 
 impl Default for App {
@@ -196,6 +186,62 @@ impl App {
     /// Create a new app with default state.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    // === Getters for internal state (public API for external crates) ===
+
+    /// Get whether the alignment has been modified.
+    #[allow(dead_code)] // Public API
+    pub fn modified(&self) -> bool {
+        self.modified
+    }
+
+    /// Get current cursor row.
+    #[allow(dead_code)] // Public API
+    pub fn cursor_row(&self) -> usize {
+        self.cursor_row
+    }
+
+    /// Get current cursor column.
+    #[allow(dead_code)] // Public API
+    pub fn cursor_col(&self) -> usize {
+        self.cursor_col
+    }
+
+    /// Get viewport row offset.
+    #[allow(dead_code)] // Public API
+    pub fn viewport_row(&self) -> usize {
+        self.viewport_row
+    }
+
+    /// Get viewport column offset.
+    #[allow(dead_code)] // Public API
+    pub fn viewport_col(&self) -> usize {
+        self.viewport_col
+    }
+
+    /// Get current editor mode.
+    #[allow(dead_code)] // Public API
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+
+    /// Get current status message.
+    #[allow(dead_code)] // Public API
+    pub fn status_message(&self) -> Option<&str> {
+        self.status_message.as_deref()
+    }
+
+    /// Get secondary viewport row offset.
+    #[allow(dead_code)] // Public API
+    pub fn secondary_viewport_row(&self) -> usize {
+        self.secondary_viewport_row
+    }
+
+    /// Get secondary viewport column offset.
+    #[allow(dead_code)] // Public API
+    pub fn secondary_viewport_col(&self) -> usize {
+        self.secondary_viewport_col
     }
 
     /// Load an alignment from a file.
@@ -499,6 +545,22 @@ impl App {
             }
             ["only"] => {
                 self.close_split();
+            }
+            ["upper"] | ["uppercase"] => {
+                self.uppercase_alignment();
+                self.set_status("Converted to uppercase");
+            }
+            ["lower"] | ["lowercase"] => {
+                self.lowercase_alignment();
+                self.set_status("Converted to lowercase");
+            }
+            ["t2u"] => {
+                self.convert_t_to_u();
+                self.set_status("Converted T to U");
+            }
+            ["u2t"] => {
+                self.convert_u_to_t();
+                self.set_status("Converted U to T");
             }
             _ => {
                 self.set_status(format!("Unknown command: {}", command));

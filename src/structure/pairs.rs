@@ -1,7 +1,5 @@
 //! Base pair caching and higher-level structure operations.
 
-#![allow(dead_code)]
-
 use super::parser::{parse_structure, BasePair, StructureError};
 
 /// Cached structure information for an alignment.
@@ -58,11 +56,13 @@ impl StructureCache {
     }
 
     /// Get all base pairs.
+    #[allow(dead_code)] // API for structure analysis
     pub fn pairs(&self) -> &[BasePair] {
         &self.pairs
     }
 
     /// Get the number of unique helices.
+    #[allow(dead_code)] // API for structure analysis
     pub fn num_helices(&self) -> usize {
         self.pairs
             .iter()
@@ -78,6 +78,7 @@ impl StructureCache {
     }
 
     /// Clear the cache.
+    #[allow(dead_code)] // API for cache management
     pub fn clear(&mut self) {
         self.cached_structure.clear();
         self.pairs.clear();
