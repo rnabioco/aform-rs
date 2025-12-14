@@ -6,11 +6,11 @@ Download the latest release for your platform from the [releases page](https://g
 
 | Platform | Download |
 |----------|----------|
-| Linux (x86_64) | `aform-rs-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux (ARM64) | `aform-rs-aarch64-unknown-linux-gnu.tar.gz` |
-| macOS (Intel) | `aform-rs-x86_64-apple-darwin.tar.gz` |
-| macOS (Apple Silicon) | `aform-rs-aarch64-apple-darwin.tar.gz` |
-| Windows | `aform-rs-x86_64-pc-windows-msvc.zip` |
+| Linux (x86_64) | `aform-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux (ARM64) | `aform-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS (Intel) | `aform-x86_64-apple-darwin.tar.gz` |
+| macOS (Apple Silicon) | `aform-aarch64-apple-darwin.tar.gz` |
+| Windows | `aform-x86_64-pc-windows-msvc.zip` |
 
 ## From Source
 
@@ -26,7 +26,7 @@ cd aform-rs
 cargo build --release
 ```
 
-The binary will be at `target/release/aform-rs`.
+The binary will be at `target/release/aform`.
 
 ## Optional: ViennaRNA
 

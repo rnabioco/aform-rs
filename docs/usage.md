@@ -3,8 +3,8 @@
 ## Opening Files
 
 ```bash
-aform-rs alignment.stk
-aform-rs --color structure alignment.stk
+aform alignment.stk
+aform --color structure alignment.stk
 ```
 
 Or use `:e` to browse files from within the editor.

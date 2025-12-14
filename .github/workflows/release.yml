@@ -50,21 +50,21 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../aform-rs-${{ matrix.target }}.tar.gz aform-rs
+          tar czf ../../../aform-${{ matrix.target }}.tar.gz aform
           cd ../../..
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          7z a ../../../aform-rs-${{ matrix.target }}.zip aform-rs.exe
+          7z a ../../../aform-${{ matrix.target }}.zip aform.exe
           cd ../../..
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aform-rs-${{ matrix.target }}
-          path: aform-rs-${{ matrix.target }}.*
+          name: aform-${{ matrix.target }}
+          path: aform-${{ matrix.target }}.*
 
   release:
     name: Create Release

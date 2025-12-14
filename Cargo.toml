@@ -1,12 +1,16 @@
 [package]
 name = "aform-rs"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "Terminal Stockholm alignment editor inspired by Emacs ralee mode"
 license = "MIT"
-repository = "https://github.com/jayhesselberth/aform"
+repository = "https://github.com/rnabioco/aform-rs"
 keywords = ["bioinformatics", "rna", "alignment", "stockholm", "tui"]
 categories = ["command-line-utilities", "science"]
+
+[[bin]]
+name = "aform"
+path = "src/main.rs"
 
 [dependencies]
 ratatui = "0.29"

@@ -24,10 +24,10 @@ Terminal-based Stockholm alignment editor with vim-style modal editing.
 
 ```bash
 # Open a Stockholm file
-aform-rs alignment.stk
+aform alignment.stk
 
 # With structure coloring
-aform-rs --color structure alignment.stk
+aform --color structure alignment.stk
 ```
 
 Press `?` for help within the editor.
