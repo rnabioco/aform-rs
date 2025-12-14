@@ -178,12 +178,11 @@ fn render_alignment(frame: &mut Frame, app: &App, area: Rect) {
                 style = style.add_modifier(Modifier::REVERSED);
             }
 
-            // Highlight paired position
-            if app.color_scheme == ColorScheme::Structure {
-                if let Some(paired) = app.structure_cache.get_pair(col) {
-                    if app.cursor_col == paired {
-                        style = style.add_modifier(Modifier::UNDERLINED);
-                    }
+            // Highlight paired column (works in all color modes)
+            if let Some(paired_col) = app.structure_cache.get_pair(app.cursor_col) {
+                if col == paired_col {
+                    // Subtle background tint with light foreground for readability
+                    style = style.bg(Color::Rgb(40, 40, 60)).fg(Color::White);
                 }
             }
 
@@ -214,10 +213,10 @@ fn render_alignment(frame: &mut Frame, app: &App, area: Rect) {
 
                 let mut style = Style::reset().fg(Color::Yellow);
 
-                // Highlight if paired with cursor
-                if let Some(paired) = app.structure_cache.get_pair(col) {
-                    if app.cursor_col == paired || app.cursor_col == col {
-                        style = style.add_modifier(Modifier::BOLD);
+                // Highlight the paired bracket when cursor is on a paired column
+                if let Some(paired_col) = app.structure_cache.get_pair(app.cursor_col) {
+                    if col == paired_col {
+                        style = style.add_modifier(Modifier::BOLD | Modifier::REVERSED);
                     }
                 }
 
