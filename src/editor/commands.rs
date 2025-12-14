@@ -118,7 +118,7 @@ impl App {
                 ShiftDirection::Left => "left",
                 ShiftDirection::Right => "right",
             };
-            self.set_status(format!("Cannot shift {} (no gap found)", dir_str));
+            self.set_status(format!("Cannot shift {dir_str} (no gap found)"));
             false
         }
     }
@@ -147,18 +147,18 @@ impl App {
                 ShiftDirection::Left => "left",
                 ShiftDirection::Right => "right",
             };
-            self.set_status(format!("Cannot throw {} (no gaps found)", dir_str));
+            self.set_status(format!("Cannot throw {dir_str} (no gaps found)"));
         }
     }
 
     /// Throw sequence left (shift as far as possible).
     pub fn throw_sequence_left(&mut self) {
-        self.throw_sequence(ShiftDirection::Left)
+        self.throw_sequence(ShiftDirection::Left);
     }
 
     /// Throw sequence right (shift as far as possible).
     pub fn throw_sequence_right(&mut self) {
-        self.throw_sequence(ShiftDirection::Right)
+        self.throw_sequence(ShiftDirection::Right);
     }
 
     /// Undo the last action.

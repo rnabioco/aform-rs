@@ -93,6 +93,7 @@ impl StructureCache {
 }
 
 /// Check if two bases can form a Watson-Crick or wobble pair.
+#[allow(clippy::unnested_or_patterns)] // Preserve biological pair grouping
 pub fn is_valid_pair(base1: char, base2: char) -> bool {
     let b1 = base1.to_ascii_uppercase();
     let b2 = base2.to_ascii_uppercase();

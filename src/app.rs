@@ -260,7 +260,7 @@ impl App {
     /// Load an alignment from a file.
     pub fn load_file(&mut self, path: &PathBuf) -> Result<(), String> {
         let alignment = crate::stockholm::parser::parse_file(path)
-            .map_err(|e| format!("Failed to parse file: {}", e))?;
+            .map_err(|e| format!("Failed to parse file: {e}"))?;
 
         self.alignment = alignment;
         self.file_path = Some(path.clone());
@@ -284,7 +284,7 @@ impl App {
     pub fn save_file(&mut self) -> Result<(), String> {
         let path = self.file_path.as_ref().ok_or("No file path set")?;
         crate::stockholm::writer::write_file(&self.alignment, path)
-            .map_err(|e| format!("Failed to save file: {}", e))?;
+            .map_err(|e| format!("Failed to save file: {e}"))?;
         self.modified = false;
         self.set_status(format!("Saved {}", path.display()));
         Ok(())
@@ -293,7 +293,7 @@ impl App {
     /// Save the alignment to a new file.
     pub fn save_file_as(&mut self, path: PathBuf) -> Result<(), String> {
         crate::stockholm::writer::write_file(&self.alignment, &path)
-            .map_err(|e| format!("Failed to save file: {}", e))?;
+            .map_err(|e| format!("Failed to save file: {e}"))?;
         self.file_path = Some(path.clone());
         self.modified = false;
         self.set_status(format!("Saved {}", path.display()));
@@ -606,7 +606,7 @@ impl App {
 
         let parts: Vec<&str> = command.split_whitespace().collect();
         match parts.as_slice() {
-            ["q"] | ["quit"] => {
+            ["q" | "quit"] => {
                 if self.split_mode.is_some() {
                     // In split mode, :q closes the current pane
                     self.close_split();
@@ -624,7 +624,7 @@ impl App {
                     self.should_quit = true;
                 }
             }
-            ["w"] | ["write"] => {
+            ["w" | "write"] => {
                 if let Err(e) = self.save_file() {
                     self.set_status(e);
                 }
@@ -646,7 +646,7 @@ impl App {
                     self.color_scheme = s;
                     self.set_status(format!("Color scheme: {}", s.as_str()));
                 } else {
-                    self.set_status(format!("Unknown color scheme: {}", scheme));
+                    self.set_status(format!("Unknown color scheme: {scheme}"));
                 }
             }
             ["set", setting] => {
@@ -655,11 +655,11 @@ impl App {
                         "gap" => {
                             if let Some(c) = value.chars().next() {
                                 self.gap_char = c;
-                                self.set_status(format!("Gap character: '{}'", c));
+                                self.set_status(format!("Gap character: '{c}'"));
                             }
                         }
                         _ => {
-                            self.set_status(format!("Unknown setting: {}", key));
+                            self.set_status(format!("Unknown setting: {key}"));
                         }
                     }
                 }
@@ -670,7 +670,7 @@ impl App {
             ["alifold"] => {
                 self.fold_alignment();
             }
-            ["?"] | ["help"] => {
+            ["?" | "help"] => {
                 self.show_help = true;
             }
             ["ruler"] => {
@@ -681,20 +681,20 @@ impl App {
                 self.show_row_numbers = !self.show_row_numbers;
                 self.set_status(format!("Row numbers: {}", if self.show_row_numbers { "on" } else { "off" }));
             }
-            ["split"] | ["sp"] => {
+            ["split" | "sp"] => {
                 self.horizontal_split();
             }
-            ["vsplit"] | ["vs"] | ["vsp"] => {
+            ["vsplit" | "vs" | "vsp"] => {
                 self.vertical_split();
             }
             ["only"] => {
                 self.close_split();
             }
-            ["upper"] | ["uppercase"] => {
+            ["upper" | "uppercase"] => {
                 self.uppercase_alignment();
                 self.set_status("Converted to uppercase");
             }
-            ["lower"] | ["lowercase"] => {
+            ["lower" | "lowercase"] => {
                 self.lowercase_alignment();
                 self.set_status("Converted to lowercase");
             }
@@ -707,7 +707,7 @@ impl App {
                 self.set_status("Converted U to T");
             }
             _ => {
-                self.set_status(format!("Unknown command: {}", command));
+                self.set_status(format!("Unknown command: {command}"));
             }
         }
     }
@@ -791,7 +791,6 @@ impl App {
         match self.command_history_index {
             None => {
                 // Not in history, do nothing
-                return;
             }
             Some(i) if i >= self.command_history.len() - 1 => {
                 // At end of history, restore saved input

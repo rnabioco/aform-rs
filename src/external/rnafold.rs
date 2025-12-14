@@ -2,8 +2,6 @@
 //!
 //! See: https://github.com/ViennaRNA/ViennaRNA
 
-#![allow(dead_code)]
-
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -67,7 +65,7 @@ pub fn fold_sequence(sequence: &str, name: &str) -> Result<FoldResult, RnaFoldEr
     }
 
     // Create FASTA input
-    let fasta = format!(">{}\n{}\n", name, clean_seq);
+    let fasta = format!(">{name}\n{clean_seq}\n");
 
     // Run RNAfold
     let mut child = Command::new("RNAfold")
@@ -123,13 +121,12 @@ fn parse_rnafold_output(output: &str) -> Result<FoldResult, RnaFoldError> {
                     .ok();
 
                 return Ok(FoldResult { structure, mfe });
-            } else {
-                // No energy, just structure
-                return Ok(FoldResult {
-                    structure: trimmed.to_string(),
-                    mfe: None,
-                });
             }
+            // No energy, just structure
+            return Ok(FoldResult {
+                structure: trimmed.to_string(),
+                mfe: None,
+            });
         }
     }
 
@@ -156,7 +153,7 @@ pub fn fold_alignment(
         } else {
             id.as_str()
         };
-        clustal.push_str(&format!("{:<30} {}\n", short_id, seq));
+        clustal.push_str(&format!("{short_id:<30} {seq}\n"));
     }
 
     // Run RNAalifold
@@ -192,7 +189,7 @@ fn parse_rnaalifold_output(output: &str) -> Result<FoldResult, RnaFoldError> {
     // RNAalifold output format:
     // consensus sequence
     // structure (energy = X.XX kcal/mol)
-    for (_i, line) in lines.iter().enumerate() {
+    for line in &lines {
         let trimmed = line.trim();
 
         // Look for structure line with energy
@@ -211,12 +208,11 @@ fn parse_rnaalifold_output(output: &str) -> Result<FoldResult, RnaFoldError> {
                     .and_then(|s| s.parse::<f64>().ok());
 
                 return Ok(FoldResult { structure, mfe });
-            } else {
-                return Ok(FoldResult {
-                    structure: trimmed.to_string(),
-                    mfe: None,
-                });
             }
+            return Ok(FoldResult {
+                structure: trimmed.to_string(),
+                mfe: None,
+            });
         }
     }
 

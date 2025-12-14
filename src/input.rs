@@ -35,7 +35,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent, page_size: usize) {
     // Clear count for non-digit keys (except | which consumes it)
     let is_pipe = matches!(
         (key.modifiers, key.code),
-        (KeyModifiers::NONE, KeyCode::Char('|')) | (KeyModifiers::SHIFT, KeyCode::Char('|'))
+        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char('|'))
     );
     if !is_count_digit && !is_pipe {
         app.clear_count();
@@ -60,34 +60,32 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent, page_size: usize) {
         }
 
         // Go to column (vim |)
-        (KeyModifiers::NONE, KeyCode::Char('|'))
-        | (KeyModifiers::SHIFT, KeyCode::Char('|')) => {
+        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char('|')) => {
             let col = app.take_count();
             app.goto_column(col);
         }
 
         // Movement - basic
-        (KeyModifiers::NONE, KeyCode::Char('h')) | (KeyModifiers::NONE, KeyCode::Left) => {
+        (KeyModifiers::NONE, KeyCode::Char('h') | KeyCode::Left) => {
             app.cursor_left();
         }
-        (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
+        (KeyModifiers::NONE, KeyCode::Char('j') | KeyCode::Down) => {
             app.cursor_down();
         }
-        (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
+        (KeyModifiers::NONE, KeyCode::Char('k') | KeyCode::Up) => {
             app.cursor_up();
         }
-        (KeyModifiers::NONE, KeyCode::Char('l')) | (KeyModifiers::NONE, KeyCode::Right) => {
+        (KeyModifiers::NONE, KeyCode::Char('l') | KeyCode::Right) => {
             app.cursor_right();
         }
 
         // Movement - line
         (KeyModifiers::NONE, KeyCode::Char('0'))
-        | (KeyModifiers::SHIFT, KeyCode::Char('^'))
-        | (KeyModifiers::NONE, KeyCode::Char('^')) => {
+        | (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char('^')) => {
             // Only reaches here if count_buffer is empty (handled above otherwise)
             app.cursor_line_start();
         }
-        (KeyModifiers::NONE, KeyCode::Char('$')) | (KeyModifiers::SHIFT, KeyCode::Char('$')) => {
+        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char('$')) => {
             app.cursor_line_end();
         }
         (KeyModifiers::NONE, KeyCode::Home) => {
@@ -186,7 +184,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent, page_size: usize) {
         }
 
         // Command mode
-        (KeyModifiers::NONE, KeyCode::Char(':')) | (KeyModifiers::SHIFT, KeyCode::Char(':')) => {
+        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(':')) => {
             app.enter_command_mode();
         }
 
@@ -208,8 +206,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent, page_size: usize) {
         }
 
         // Help (some terminals send ? without SHIFT modifier)
-        (KeyModifiers::SHIFT, KeyCode::Char('?'))
-        | (KeyModifiers::NONE, KeyCode::Char('?')) => {
+        (KeyModifiers::SHIFT | KeyModifiers::NONE, KeyCode::Char('?')) => {
             app.toggle_help();
         }
 
@@ -232,15 +229,11 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent, page_size: usize) {
             ("Ctrl-w...", KeyCode::Char('v')) => {
                 app.vertical_split();
             }
-            ("Ctrl-w...", KeyCode::Char('w'))
-            | ("Ctrl-w...", KeyCode::Left)
-            | ("Ctrl-w...", KeyCode::Right)
-            | ("Ctrl-w...", KeyCode::Up)
-            | ("Ctrl-w...", KeyCode::Down)
-            | ("Ctrl-w...", KeyCode::Char('h'))
-            | ("Ctrl-w...", KeyCode::Char('j'))
-            | ("Ctrl-w...", KeyCode::Char('k'))
-            | ("Ctrl-w...", KeyCode::Char('l')) => {
+            ("Ctrl-w...", KeyCode::Char('w' | 'h' | 'j' | 'k' | 'l')
+                | KeyCode::Left
+                | KeyCode::Right
+                | KeyCode::Up
+                | KeyCode::Down) => {
                 app.switch_pane();
             }
             ("Ctrl-w...", KeyCode::Char('q')) => {
@@ -257,7 +250,7 @@ fn handle_insert_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => {
             app.enter_normal_mode();
         }
-        KeyCode::Char('.') | KeyCode::Char('-') => {
+        KeyCode::Char('.' | '-') => {
             app.insert_gap();
         }
         KeyCode::Backspace => {
