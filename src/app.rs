@@ -18,6 +18,8 @@ pub enum Mode {
     Search,
     /// File browser mode for opening files.
     Browse,
+    /// Visual block selection mode.
+    Visual,
 }
 
 impl Mode {
@@ -28,6 +30,7 @@ impl Mode {
             Mode::Command => "COMMAND",
             Mode::Search => "SEARCH",
             Mode::Browse => "BROWSE",
+            Mode::Visual => "VISUAL",
         }
     }
 }
@@ -164,6 +167,12 @@ pub struct App {
     // === File browser state ===
     /// File explorer for browsing files.
     pub(crate) file_explorer: Option<FileExplorer>,
+
+    // === Visual selection state ===
+    /// Selection anchor point (row, col) - set when entering visual mode.
+    pub(crate) selection_anchor: Option<(usize, usize)>,
+    /// Clipboard for yanked block (rectangular selection).
+    pub(crate) clipboard: Option<Vec<Vec<char>>>,
 }
 
 impl Default for App {
@@ -201,6 +210,8 @@ impl Default for App {
             search_matches: Vec::new(),
             search_match_index: None,
             file_explorer: None,
+            selection_anchor: None,
+            clipboard: None,
         }
     }
 }
@@ -498,6 +509,135 @@ impl App {
     pub fn exit_browse_mode(&mut self) {
         self.file_explorer = None;
         self.mode = Mode::Normal;
+    }
+
+    /// Enter visual selection mode.
+    pub fn enter_visual_mode(&mut self) {
+        self.mode = Mode::Visual;
+        self.selection_anchor = Some((self.cursor_row, self.cursor_col));
+    }
+
+    /// Exit visual mode without taking action.
+    pub fn exit_visual_mode(&mut self) {
+        self.mode = Mode::Normal;
+        self.selection_anchor = None;
+    }
+
+    /// Get the bounds of the current selection (`min_row`, `min_col`, `max_row`, `max_col`).
+    /// Returns None if not in visual mode or no anchor set.
+    pub fn get_selection_bounds(&self) -> Option<(usize, usize, usize, usize)> {
+        let (anchor_row, anchor_col) = self.selection_anchor?;
+        let min_row = anchor_row.min(self.cursor_row);
+        let max_row = anchor_row.max(self.cursor_row);
+        let min_col = anchor_col.min(self.cursor_col);
+        let max_col = anchor_col.max(self.cursor_col);
+        Some((min_row, min_col, max_row, max_col))
+    }
+
+    /// Check if a cell is within the current selection.
+    pub fn is_selected(&self, row: usize, col: usize) -> bool {
+        if self.mode != Mode::Visual {
+            return false;
+        }
+        if let Some((min_row, min_col, max_row, max_col)) = self.get_selection_bounds() {
+            row >= min_row && row <= max_row && col >= min_col && col <= max_col
+        } else {
+            false
+        }
+    }
+
+    /// Get selection dimensions as a string for status bar.
+    pub fn selection_info(&self) -> Option<String> {
+        if self.mode != Mode::Visual {
+            return None;
+        }
+        let (min_row, min_col, max_row, max_col) = self.get_selection_bounds()?;
+        let rows = max_row - min_row + 1;
+        let cols = max_col - min_col + 1;
+        Some(format!("{rows}x{cols}"))
+    }
+
+    /// Yank (copy) the selected block to clipboard.
+    pub fn yank_selection(&mut self) {
+        let Some((min_row, min_col, max_row, max_col)) = self.get_selection_bounds() else {
+            return;
+        };
+
+        let mut block = Vec::new();
+        for row in min_row..=max_row {
+            if let Some(seq) = self.alignment.sequences.get(row) {
+                let chars: Vec<char> = (min_col..=max_col)
+                    .map(|col| seq.get(col).unwrap_or(self.gap_char))
+                    .collect();
+                block.push(chars);
+            }
+        }
+
+        let rows = block.len();
+        let cols = if block.is_empty() { 0 } else { block[0].len() };
+        self.clipboard = Some(block);
+        self.exit_visual_mode();
+        self.set_status(format!("Yanked {rows}x{cols} block"));
+    }
+
+    /// Delete the selected block (replace with gaps).
+    pub fn delete_selection(&mut self) {
+        let Some((min_row, min_col, max_row, max_col)) = self.get_selection_bounds() else {
+            return;
+        };
+
+        // Save for undo
+        self.history
+            .save(&self.alignment, self.cursor_row, self.cursor_col);
+
+        // Replace selected region with gaps
+        for row in min_row..=max_row {
+            if let Some(seq_rc) = self.alignment.sequences.get_mut(row) {
+                let seq = std::rc::Rc::make_mut(seq_rc);
+                for col in min_col..=max_col {
+                    if col < seq.len() {
+                        seq.set(col, self.gap_char);
+                    }
+                }
+            }
+        }
+
+        let rows = max_row - min_row + 1;
+        let cols = max_col - min_col + 1;
+        self.modified = true;
+        self.exit_visual_mode();
+        self.set_status(format!("Deleted {rows}x{cols} block"));
+    }
+
+    /// Paste the clipboard at the cursor position.
+    pub fn paste(&mut self) {
+        let Some(ref block) = self.clipboard else {
+            self.set_status("Nothing to paste");
+            return;
+        };
+
+        // Save for undo
+        self.history
+            .save(&self.alignment, self.cursor_row, self.cursor_col);
+
+        let block = block.clone();
+        for (row_offset, row_data) in block.iter().enumerate() {
+            let target_row = self.cursor_row + row_offset;
+            if let Some(seq_rc) = self.alignment.sequences.get_mut(target_row) {
+                let seq = std::rc::Rc::make_mut(seq_rc);
+                for (col_offset, &ch) in row_data.iter().enumerate() {
+                    let target_col = self.cursor_col + col_offset;
+                    if target_col < seq.len() {
+                        seq.set(target_col, ch);
+                    }
+                }
+            }
+        }
+
+        let rows = block.len();
+        let cols = if block.is_empty() { 0 } else { block[0].len() };
+        self.modified = true;
+        self.set_status(format!("Pasted {rows}x{cols} block"));
     }
 
     /// Clear search highlighting.
@@ -817,6 +957,15 @@ impl App {
             ["u2t"] => {
                 self.convert_u_to_t();
                 self.set_status("Converted U to T");
+            }
+            ["trimleft"] => {
+                self.trim_left();
+            }
+            ["trimright"] => {
+                self.trim_right();
+            }
+            ["trim"] => {
+                self.trim();
             }
             ["noh" | "nohlsearch"] => {
                 self.clear_search();

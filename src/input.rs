@@ -18,6 +18,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent, page_size: usize) {
         Mode::Command => handle_command_mode(app, key),
         Mode::Search => handle_search_mode(app, key),
         Mode::Browse => handle_browse_mode(app, key),
+        Mode::Visual => handle_visual_mode(app, key, page_size),
     }
 }
 
@@ -133,11 +134,13 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent, page_size: usize) {
             app.scroll_left(10);
         }
 
-        // Go to pair
+        // Go to pair (gp) or paste
         (KeyModifiers::NONE, KeyCode::Char('p')) => {
             // Check if previous key was 'g'
             if pending_status.as_deref() == Some("g...") {
                 app.goto_pair();
+            } else {
+                app.paste();
             }
         }
 
@@ -205,6 +208,11 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent, page_size: usize) {
         }
         (KeyModifiers::SHIFT, KeyCode::Char('N')) => {
             app.search_prev();
+        }
+
+        // Visual mode
+        (KeyModifiers::NONE, KeyCode::Char('v')) => {
+            app.enter_visual_mode();
         }
 
         // Help (some terminals send ? without SHIFT modifier)
@@ -359,5 +367,91 @@ fn handle_browse_mode(app: &mut App, key: KeyEvent) {
     if let Some(ref mut explorer) = app.file_explorer {
         let event = Event::Key(key);
         let _ = explorer.handle(&event);
+    }
+}
+
+/// Handle keys in visual selection mode.
+fn handle_visual_mode(app: &mut App, key: KeyEvent, page_size: usize) {
+    match (key.modifiers, key.code) {
+        // Exit visual mode
+        (KeyModifiers::NONE, KeyCode::Esc) => {
+            app.exit_visual_mode();
+        }
+
+        // Movement - extends selection
+        (KeyModifiers::NONE, KeyCode::Char('h') | KeyCode::Left) => {
+            app.cursor_left();
+        }
+        (KeyModifiers::NONE, KeyCode::Char('j') | KeyCode::Down) => {
+            app.cursor_down();
+        }
+        (KeyModifiers::NONE, KeyCode::Char('k') | KeyCode::Up) => {
+            app.cursor_up();
+        }
+        (KeyModifiers::NONE, KeyCode::Char('l') | KeyCode::Right) => {
+            app.cursor_right();
+        }
+
+        // Line movement
+        (KeyModifiers::NONE, KeyCode::Char('0'))
+        | (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char('^')) => {
+            app.cursor_line_start();
+        }
+        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char('$')) => {
+            app.cursor_line_end();
+        }
+        (KeyModifiers::NONE, KeyCode::Home) => {
+            app.cursor_line_start();
+        }
+        (KeyModifiers::NONE, KeyCode::End) => {
+            app.cursor_line_end();
+        }
+
+        // Document movement
+        (KeyModifiers::NONE, KeyCode::Char('g')) => {
+            app.set_status("g...");
+        }
+        (KeyModifiers::SHIFT, KeyCode::Char('G')) => {
+            app.cursor_last_sequence();
+        }
+
+        // Page movement
+        (KeyModifiers::CONTROL, KeyCode::Char('f')) | (KeyModifiers::NONE, KeyCode::PageDown) => {
+            app.page_down(page_size);
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('b')) | (KeyModifiers::NONE, KeyCode::PageUp) => {
+            app.page_up(page_size);
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
+            app.half_page_down(page_size);
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
+            app.half_page_up(page_size);
+        }
+
+        // Word-like movement (jump by 10 columns)
+        (KeyModifiers::NONE, KeyCode::Char('w')) => {
+            app.scroll_right(10);
+        }
+        (KeyModifiers::NONE, KeyCode::Char('b')) => {
+            app.scroll_left(10);
+        }
+
+        // Yank (copy) selection
+        (KeyModifiers::NONE, KeyCode::Char('y')) => {
+            app.yank_selection();
+        }
+
+        // Delete selection
+        (KeyModifiers::NONE, KeyCode::Char('d' | 'x')) => {
+            app.delete_selection();
+        }
+
+        // Re-enter visual mode (resets anchor)
+        (KeyModifiers::NONE, KeyCode::Char('v')) => {
+            app.exit_visual_mode();
+        }
+
+        _ => {}
     }
 }

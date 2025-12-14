@@ -274,6 +274,87 @@ impl Alignment {
         }
         false
     }
+
+    /// Check if a column contains only gap characters.
+    fn is_gap_column(&self, col: usize, gap_chars: &[char]) -> bool {
+        self.sequences
+            .iter()
+            .all(|s| s.get(col).map(|c| gap_chars.contains(&c)).unwrap_or(true))
+    }
+
+    /// Remove leading gap-only columns from the alignment.
+    /// Returns the number of columns removed.
+    pub fn trim_left(&mut self, gap_chars: &[char]) -> usize {
+        let width = self.width();
+        if width == 0 {
+            return 0;
+        }
+
+        // Find first non-gap column
+        let first_non_gap = (0..width)
+            .find(|&col| !self.is_gap_column(col, gap_chars))
+            .unwrap_or(width);
+
+        if first_non_gap == 0 {
+            return 0;
+        }
+
+        // Remove columns from the front
+        for seq in &mut self.sequences {
+            let seq_mut = Rc::make_mut(seq);
+            seq_mut.chars_mut().drain(0..first_non_gap);
+        }
+        for ann in &mut self.column_annotations {
+            ann.data.drain(0..first_non_gap.min(ann.data.len()));
+        }
+        for annotations in self.residue_annotations.values_mut() {
+            for ann in annotations {
+                ann.data.drain(0..first_non_gap.min(ann.data.len()));
+            }
+        }
+
+        first_non_gap
+    }
+
+    /// Remove trailing gap-only columns from the alignment.
+    /// Returns the number of columns removed.
+    pub fn trim_right(&mut self, gap_chars: &[char]) -> usize {
+        let width = self.width();
+        if width == 0 {
+            return 0;
+        }
+
+        // Find last non-gap column
+        let last_non_gap = (0..width)
+            .rev()
+            .find(|&col| !self.is_gap_column(col, gap_chars));
+
+        let trim_from = match last_non_gap {
+            Some(col) => col + 1,
+            None => 0, // All columns are gaps
+        };
+
+        let to_remove = width - trim_from;
+        if to_remove == 0 {
+            return 0;
+        }
+
+        // Remove columns from the end
+        for seq in &mut self.sequences {
+            let seq_mut = Rc::make_mut(seq);
+            seq_mut.chars_mut().truncate(trim_from);
+        }
+        for ann in &mut self.column_annotations {
+            ann.data.truncate(trim_from);
+        }
+        for annotations in self.residue_annotations.values_mut() {
+            for ann in annotations {
+                ann.data.truncate(trim_from);
+            }
+        }
+
+        to_remove
+    }
 }
 
 impl Sequence {

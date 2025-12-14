@@ -270,4 +270,48 @@ impl App {
         }
         self.mark_modified();
     }
+
+    /// Trim leading gap-only columns from the alignment.
+    pub fn trim_left(&mut self) {
+        self.save_undo_state();
+        let removed = self.alignment.trim_left(&self.gap_chars);
+        if removed > 0 {
+            self.mark_modified();
+            self.clamp_cursor();
+            self.update_structure_cache();
+            self.set_status(format!("Trimmed {removed} columns from left"));
+        } else {
+            self.set_status("No gap-only columns on left");
+        }
+    }
+
+    /// Trim trailing gap-only columns from the alignment.
+    pub fn trim_right(&mut self) {
+        self.save_undo_state();
+        let removed = self.alignment.trim_right(&self.gap_chars);
+        if removed > 0 {
+            self.mark_modified();
+            self.clamp_cursor();
+            self.update_structure_cache();
+            self.set_status(format!("Trimmed {removed} columns from right"));
+        } else {
+            self.set_status("No gap-only columns on right");
+        }
+    }
+
+    /// Trim both leading and trailing gap-only columns.
+    pub fn trim(&mut self) {
+        self.save_undo_state();
+        let left = self.alignment.trim_left(&self.gap_chars);
+        let right = self.alignment.trim_right(&self.gap_chars);
+        let total = left + right;
+        if total > 0 {
+            self.mark_modified();
+            self.clamp_cursor();
+            self.update_structure_cache();
+            self.set_status(format!("Trimmed {total} columns ({left} left, {right} right)"));
+        } else {
+            self.set_status("No gap-only columns to trim");
+        }
+    }
 }

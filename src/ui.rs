@@ -277,6 +277,11 @@ fn render_alignment_pane(
                 }
             }
 
+            // Highlight visual selection
+            if app.is_selected(row, col) {
+                style = style.bg(Color::Rgb(80, 80, 140)).fg(Color::White);
+            }
+
             // Highlight paired column (works across all panes)
             if let Some(paired_col) = app.structure_cache.get_pair(app.cursor_col) {
                 if col == paired_col {
@@ -404,6 +409,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Mode::Command => Style::default().bg(Color::Yellow).fg(Color::Black),
         Mode::Search => Style::default().bg(Color::Magenta).fg(Color::White),
         Mode::Browse => Style::default().bg(Color::Cyan).fg(Color::Black),
+        Mode::Visual => Style::default().bg(Color::Rgb(100, 100, 180)).fg(Color::White),
     };
 
     let mode_span = Span::styled(format!(" {} ", app.mode.as_str()), mode_style);
@@ -442,12 +448,19 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         .map(|c| format!(" '{}' ", c))
         .unwrap_or_default();
 
+    // Selection info (in visual mode)
+    let selection_info = app
+        .selection_info()
+        .map(|s| format!(" [{}] ", s))
+        .unwrap_or_default();
+
     let spans = vec![
         mode_span,
         Span::raw(pos_info),
         Span::styled(align_info, Style::default().fg(Color::Cyan)),
         Span::styled(color_info, Style::default().fg(Color::Magenta)),
         Span::styled(structure_info, Style::default().fg(Color::Yellow)),
+        Span::styled(selection_info, Style::default().fg(Color::LightBlue)),
         Span::raw(char_info),
     ];
 
