@@ -309,7 +309,9 @@ impl App {
             self.mark_modified();
             self.clamp_cursor();
             self.update_structure_cache();
-            self.set_status(format!("Trimmed {total} columns ({left} left, {right} right)"));
+            self.set_status(format!(
+                "Trimmed {total} columns ({left} left, {right} right)"
+            ));
         } else {
             self.set_status("No gap-only columns to trim");
         }

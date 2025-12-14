@@ -409,7 +409,9 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Mode::Command => Style::default().bg(Color::Yellow).fg(Color::Black),
         Mode::Search => Style::default().bg(Color::Magenta).fg(Color::White),
         Mode::Browse => Style::default().bg(Color::Cyan).fg(Color::Black),
-        Mode::Visual => Style::default().bg(Color::Rgb(100, 100, 180)).fg(Color::White),
+        Mode::Visual => Style::default()
+            .bg(Color::Rgb(100, 100, 180))
+            .fg(Color::White),
     };
 
     let mode_span = Span::styled(format!(" {} ", app.mode.as_str()), mode_style);
@@ -539,12 +541,12 @@ pub fn visible_dimensions(
 fn render_splash(frame: &mut Frame, area: Rect) {
     // Rainbow colors for the helix
     let helix_colors = [
-        Color::Rgb(255, 0, 0),     // Red
-        Color::Rgb(255, 127, 0),   // Orange
-        Color::Rgb(255, 255, 0),   // Yellow
-        Color::Rgb(0, 255, 0),     // Green
-        Color::Rgb(0, 127, 255),   // Blue
-        Color::Rgb(127, 0, 255),   // Purple
+        Color::Rgb(255, 0, 0),   // Red
+        Color::Rgb(255, 127, 0), // Orange
+        Color::Rgb(255, 255, 0), // Yellow
+        Color::Rgb(0, 255, 0),   // Green
+        Color::Rgb(0, 127, 255), // Blue
+        Color::Rgb(127, 0, 255), // Purple
     ];
 
     let version = env!("CARGO_PKG_VERSION");
@@ -583,7 +585,9 @@ fn render_splash(frame: &mut Frame, area: Rect) {
             Span::styled(*helix, Style::default().fg(helix_color)),
             Span::styled(
                 *text,
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ),
         ]));
     }
