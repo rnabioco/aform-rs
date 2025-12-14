@@ -261,9 +261,15 @@ fn render_alignment_pane(
                 style = style.bg(color).fg(Color::Black);
             }
 
-            // Highlight cursor
-            if is_cursor {
-                style = style.add_modifier(Modifier::REVERSED);
+            // Highlight search matches
+            if let Some(is_current) = app.is_search_match(row, col) {
+                if is_current {
+                    // Current match: bright yellow background
+                    style = style.bg(Color::Yellow).fg(Color::Black);
+                } else {
+                    // Other matches: dimmer highlight
+                    style = style.bg(Color::Rgb(100, 100, 50)).fg(Color::White);
+                }
             }
 
             // Highlight paired column (works across all panes)
@@ -272,6 +278,11 @@ fn render_alignment_pane(
                     // Subtle background tint with light foreground for readability
                     style = style.bg(Color::Rgb(40, 40, 60)).fg(Color::White);
                 }
+            }
+
+            // Highlight cursor (on top of everything)
+            if is_cursor {
+                style = style.add_modifier(Modifier::REVERSED);
             }
 
             spans.push(Span::styled(ch.to_string(), style));
@@ -527,6 +538,10 @@ fn render_help(frame: &mut Frame) {
         Line::from("  Ctrl-d/u    Half page down/up"),
         Line::from("  gp          Go to paired base"),
         Line::from("  N|          Go to column N"),
+        Line::from(""),
+        Line::from(Span::styled("Search", Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow))),
+        Line::from("  /           Search (U/T tolerant)"),
+        Line::from("  n / N       Next/previous match"),
         Line::from(""),
         Line::from(Span::styled("Split Windows", Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow))),
         Line::from("  Ctrl-w s    Horizontal split (:sp)"),

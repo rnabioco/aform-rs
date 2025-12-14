@@ -524,22 +524,53 @@ impl App {
     }
 
     /// Find all matches of a pattern in the alignment.
+    /// Case-insensitive and U/T tolerant (RNA/DNA equivalent).
     fn find_matches(&self, pattern: &str) -> Vec<(usize, usize)> {
-        let pattern_upper = pattern.to_uppercase();
+        let pattern_normalized = Self::normalize_for_search(pattern);
         let mut matches = Vec::new();
 
         for (row, seq) in self.alignment.sequences.iter().enumerate() {
             let data: String = seq.chars().iter().collect();
-            let data_upper = data.to_uppercase();
+            let data_normalized = Self::normalize_for_search(&data);
 
             let mut start = 0;
-            while let Some(pos) = data_upper[start..].find(&pattern_upper) {
+            while let Some(pos) = data_normalized[start..].find(&pattern_normalized) {
                 matches.push((row, start + pos));
                 start += pos + 1;
             }
         }
 
         matches
+    }
+
+    /// Normalize a string for search: uppercase and T→U for RNA/DNA equivalence.
+    fn normalize_for_search(s: &str) -> String {
+        s.to_uppercase().replace('T', "U")
+    }
+
+    /// Get the length of the current search pattern.
+    #[allow(dead_code)] // Public API
+    pub fn search_pattern_len(&self) -> usize {
+        self.search_pattern.len()
+    }
+
+    /// Check if a position is part of a search match.
+    /// Returns Some(true) if it's the current match, Some(false) if it's another match, None if not a match.
+    pub fn is_search_match(&self, row: usize, col: usize) -> Option<bool> {
+        if self.search_matches.is_empty() || self.search_pattern.is_empty() {
+            return None;
+        }
+
+        let pattern_len = self.search_pattern.len();
+        let current_idx = self.search_match_index;
+
+        for (idx, &(match_row, match_col)) in self.search_matches.iter().enumerate() {
+            if row == match_row && col >= match_col && col < match_col + pattern_len {
+                return Some(current_idx == Some(idx));
+            }
+        }
+
+        None
     }
 
     /// Jump to the current match and update status.
