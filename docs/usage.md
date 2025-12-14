@@ -9,7 +9,7 @@ aform --color structure alignment.stk
 
 Or use `:e` to browse files from within the editor.
 
-![File browser](images/file-browser.png)
+![File browser](images/file-browser.gif)
 
 ## Modes
 
@@ -94,4 +94,4 @@ Set with `:color <scheme>` or `--color` flag.
 | `conservation` | Color by column conservation |
 | `compensatory` | Highlight compensatory mutations |
 
-![Color schemes comparison](images/color-schemes.png)
+![Color schemes comparison](images/color-schemes.gif)

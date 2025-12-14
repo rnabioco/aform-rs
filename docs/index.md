@@ -2,7 +2,7 @@
 
 Terminal-based Stockholm alignment editor with vim-style modal editing.
 
-![Main editor view](images/editor.png)
+![Main editor view](images/editor.gif)
 
 ## Features
 
@@ -14,11 +14,11 @@ Terminal-based Stockholm alignment editor with vim-style modal editing.
 
 ### Structure Coloring
 
-![Structure coloring mode](images/structure-coloring.png)
+![Structure coloring mode](images/structure-coloring.gif)
 
 ### Visual Block Selection
 
-![Visual block selection](images/visual-mode.png)
+![Visual block selection](images/visual-mode.gif)
 
 ## Quick Start
 
