@@ -292,8 +292,8 @@ fn render_alignment_pane(
             // Highlight paired column (works across all panes)
             if let Some(paired_col) = app.structure_cache.get_pair(app.cursor_col) {
                 if col == paired_col {
-                    // Subtle background tint with light foreground for readability
-                    style = style.bg(Color::Rgb(40, 40, 60)).fg(Color::White);
+                    // Bright magenta background to clearly show the paired base
+                    style = style.bg(Color::Magenta).fg(Color::White);
                 }
             }
 
