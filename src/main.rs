@@ -98,6 +98,7 @@ fn run_app(
             app.alignment.max_id_len(),
             app.show_ruler,
             app.show_row_numbers,
+            app.split_mode,
         );
 
         // Adjust viewport to keep cursor visible

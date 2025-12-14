@@ -80,7 +80,9 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent, page_size: usize) {
         }
 
         // Movement - line
-        (KeyModifiers::NONE, KeyCode::Char('0')) => {
+        (KeyModifiers::NONE, KeyCode::Char('0'))
+        | (KeyModifiers::SHIFT, KeyCode::Char('^'))
+        | (KeyModifiers::NONE, KeyCode::Char('^')) => {
             // Only reaches here if count_buffer is empty (handled above otherwise)
             app.cursor_line_start();
         }
@@ -115,6 +117,11 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent, page_size: usize) {
         }
         (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
             app.half_page_up(page_size);
+        }
+
+        // Split window prefix (Ctrl-w)
+        (KeyModifiers::CONTROL, KeyCode::Char('w')) => {
+            app.set_status("Ctrl-w...");
         }
 
         // Movement - word-like (jump by 10 columns)
@@ -205,6 +212,27 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent, page_size: usize) {
             }
             ("d...", KeyCode::Char('d')) => {
                 app.delete_sequence();
+            }
+            // Ctrl-w sequences for split management
+            ("Ctrl-w...", KeyCode::Char('s')) => {
+                app.horizontal_split();
+            }
+            ("Ctrl-w...", KeyCode::Char('v')) => {
+                app.vertical_split();
+            }
+            ("Ctrl-w...", KeyCode::Char('w'))
+            | ("Ctrl-w...", KeyCode::Left)
+            | ("Ctrl-w...", KeyCode::Right)
+            | ("Ctrl-w...", KeyCode::Up)
+            | ("Ctrl-w...", KeyCode::Down)
+            | ("Ctrl-w...", KeyCode::Char('h'))
+            | ("Ctrl-w...", KeyCode::Char('j'))
+            | ("Ctrl-w...", KeyCode::Char('k'))
+            | ("Ctrl-w...", KeyCode::Char('l')) => {
+                app.switch_pane();
+            }
+            ("Ctrl-w...", KeyCode::Char('q')) => {
+                app.close_split();
             }
             _ => {}
         }

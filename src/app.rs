@@ -63,6 +63,23 @@ impl ColorScheme {
     }
 }
 
+/// Split screen mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitMode {
+    /// Top/bottom panes showing different rows.
+    Horizontal,
+    /// Left/right panes showing different columns.
+    Vertical,
+}
+
+/// Which pane is currently active in split mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ActivePane {
+    #[default]
+    Primary,
+    Secondary,
+}
+
 /// Application state.
 pub struct App {
     /// Current alignment.
@@ -126,6 +143,18 @@ pub struct App {
 
     /// Numeric count buffer for vim-style count prefixes (e.g., 50|).
     pub count_buffer: String,
+
+    /// Split screen mode (None = single pane).
+    pub split_mode: Option<SplitMode>,
+
+    /// Which pane is active in split mode.
+    pub active_pane: ActivePane,
+
+    /// Secondary pane viewport row.
+    pub secondary_viewport_row: usize,
+
+    /// Secondary pane viewport column.
+    pub secondary_viewport_col: usize,
 }
 
 impl Default for App {
@@ -155,6 +184,10 @@ impl Default for App {
             show_row_numbers: true,
             reference_seq: 0,
             count_buffer: String::new(),
+            split_mode: None,
+            active_pane: ActivePane::Primary,
+            secondary_viewport_row: 0,
+            secondary_viewport_col: 0,
         }
     }
 }
@@ -384,14 +417,22 @@ impl App {
         let parts: Vec<&str> = command.split_whitespace().collect();
         match parts.as_slice() {
             ["q"] | ["quit"] => {
-                if self.modified {
+                if self.split_mode.is_some() {
+                    // In split mode, :q closes the current pane
+                    self.close_split();
+                } else if self.modified {
                     self.set_status("No write since last change (use :q! to force)");
                 } else {
                     self.should_quit = true;
                 }
             }
             ["q!"] => {
-                self.should_quit = true;
+                if self.split_mode.is_some() {
+                    // In split mode, :q! closes the current pane (no save check needed)
+                    self.close_split();
+                } else {
+                    self.should_quit = true;
+                }
             }
             ["w"] | ["write"] => {
                 if let Err(e) = self.save_file() {
@@ -450,6 +491,15 @@ impl App {
                 self.show_row_numbers = !self.show_row_numbers;
                 self.set_status(format!("Row numbers: {}", if self.show_row_numbers { "on" } else { "off" }));
             }
+            ["split"] | ["sp"] => {
+                self.horizontal_split();
+            }
+            ["vsplit"] | ["vs"] | ["vsp"] => {
+                self.vertical_split();
+            }
+            ["only"] => {
+                self.close_split();
+            }
             _ => {
                 self.set_status(format!("Unknown command: {}", command));
             }
@@ -459,6 +509,49 @@ impl App {
     /// Toggle help display.
     pub fn toggle_help(&mut self) {
         self.show_help = !self.show_help;
+    }
+
+    /// Enable horizontal split (top/bottom panes).
+    pub fn horizontal_split(&mut self) {
+        if self.split_mode.is_none() {
+            // Initialize secondary viewport to current position
+            self.secondary_viewport_row = self.viewport_row;
+            self.secondary_viewport_col = self.viewport_col;
+        }
+        self.split_mode = Some(SplitMode::Horizontal);
+        self.set_status("Horizontal split");
+    }
+
+    /// Enable vertical split (left/right panes).
+    pub fn vertical_split(&mut self) {
+        if self.split_mode.is_none() {
+            // Initialize secondary viewport to current position
+            self.secondary_viewport_row = self.viewport_row;
+            self.secondary_viewport_col = self.viewport_col;
+        }
+        self.split_mode = Some(SplitMode::Vertical);
+        self.set_status("Vertical split");
+    }
+
+    /// Close split and return to single pane.
+    pub fn close_split(&mut self) {
+        self.split_mode = None;
+        self.active_pane = ActivePane::Primary;
+        self.set_status("Split closed");
+    }
+
+    /// Switch between panes in split mode.
+    pub fn switch_pane(&mut self) {
+        if self.split_mode.is_some() {
+            // Swap active pane and viewport positions
+            self.active_pane = match self.active_pane {
+                ActivePane::Primary => ActivePane::Secondary,
+                ActivePane::Secondary => ActivePane::Primary,
+            };
+            // Swap cursor into the other viewport
+            std::mem::swap(&mut self.viewport_row, &mut self.secondary_viewport_row);
+            std::mem::swap(&mut self.viewport_col, &mut self.secondary_viewport_col);
+        }
     }
 
     /// Navigate to previous command in history (Up arrow).

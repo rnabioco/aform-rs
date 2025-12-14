@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, ColorScheme, Mode};
+use crate::app::{ActivePane, App, ColorScheme, Mode, SplitMode};
 use crate::color::get_color;
 
 /// Render the application UI.
@@ -22,7 +22,74 @@ pub fn render(frame: &mut Frame, app: &App) {
         ])
         .split(frame.area());
 
-    render_alignment(frame, app, chunks[0]);
+    // Handle split mode
+    match app.split_mode {
+        None => {
+            // Single pane
+            render_alignment_pane(
+                frame,
+                app,
+                chunks[0],
+                app.viewport_row,
+                app.viewport_col,
+                true, // always active
+                None, // no pane indicator
+            );
+        }
+        Some(SplitMode::Horizontal) => {
+            // Top/bottom split
+            let panes = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(chunks[0]);
+
+            render_alignment_pane(
+                frame,
+                app,
+                panes[0],
+                app.viewport_row,
+                app.viewport_col,
+                app.active_pane == ActivePane::Primary,
+                Some("Primary"),
+            );
+            render_alignment_pane(
+                frame,
+                app,
+                panes[1],
+                app.secondary_viewport_row,
+                app.secondary_viewport_col,
+                app.active_pane == ActivePane::Secondary,
+                Some("Secondary"),
+            );
+        }
+        Some(SplitMode::Vertical) => {
+            // Left/right split
+            let panes = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(chunks[0]);
+
+            render_alignment_pane(
+                frame,
+                app,
+                panes[0],
+                app.viewport_row,
+                app.viewport_col,
+                app.active_pane == ActivePane::Primary,
+                Some("Primary"),
+            );
+            render_alignment_pane(
+                frame,
+                app,
+                panes[1],
+                app.secondary_viewport_row,
+                app.secondary_viewport_col,
+                app.active_pane == ActivePane::Secondary,
+                Some("Secondary"),
+            );
+        }
+    }
+
     render_status_bar(frame, app, chunks[1]);
     render_command_line(frame, app, chunks[2]);
 
@@ -82,18 +149,42 @@ impl IdFormatter {
     }
 }
 
-/// Render the alignment view.
-fn render_alignment(frame: &mut Frame, app: &App, area: Rect) {
+/// Render an alignment pane with the given viewport.
+fn render_alignment_pane(
+    frame: &mut Frame,
+    app: &App,
+    area: Rect,
+    viewport_row: usize,
+    viewport_col: usize,
+    is_active: bool,
+    pane_label: Option<&str>,
+) {
+    // Build title with file info and optional pane label
+    let file_info = format!(
+        " {} {} ",
+        app.file_path
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "[No file]".to_string()),
+        if app.modified { "[+]" } else { "" }
+    );
+
+    let title = match pane_label {
+        Some(label) => format!("{} [{}]", file_info, label),
+        None => file_info,
+    };
+
+    // Use different border color for active vs inactive pane
+    let border_style = if is_active {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(format!(
-            " {} {} ",
-            app.file_path
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "[No file]".to_string()),
-            if app.modified { "[+]" } else { "" }
-        ));
+        .border_style(border_style)
+        .title(title);
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -125,10 +216,6 @@ fn render_alignment(frame: &mut Frame, app: &App, area: Rect) {
     let seq_width = (inner.width as usize).saturating_sub(id_width);
     let visible_rows = seq_area.height as usize;
 
-    // Adjust viewport
-    let viewport_row = app.viewport_row;
-    let viewport_col = app.viewport_col;
-
     // Render sticky ruler (if enabled)
     if app.show_ruler {
         let ruler_lines = render_ruler(id_width, seq_width, viewport_col);
@@ -155,7 +242,8 @@ fn render_alignment(frame: &mut Frame, app: &App, area: Rect) {
         let seq_chars: Vec<char> = seq.data.chars().collect();
         for col in viewport_col..(viewport_col + seq_width).min(seq_chars.len()) {
             let ch = seq_chars[col];
-            let is_cursor = row == app.cursor_row && col == app.cursor_col;
+            // Only show cursor in active pane
+            let is_cursor = is_active && row == app.cursor_row && col == app.cursor_col;
 
             let mut style = Style::reset();
 
@@ -178,7 +266,7 @@ fn render_alignment(frame: &mut Frame, app: &App, area: Rect) {
                 style = style.add_modifier(Modifier::REVERSED);
             }
 
-            // Highlight paired column (works in all color modes)
+            // Highlight paired column (works across all panes)
             if let Some(paired_col) = app.structure_cache.get_pair(app.cursor_col) {
                 if col == paired_col {
                     // Subtle background tint with light foreground for readability
@@ -209,11 +297,12 @@ fn render_alignment(frame: &mut Frame, app: &App, area: Rect) {
             let ss_chars: Vec<char> = ss.chars().collect();
             for col in viewport_col..(viewport_col + seq_width).min(ss_chars.len()) {
                 let ch = ss_chars[col];
-                let is_cursor_col = col == app.cursor_col;
+                // Only show cursor column highlight in active pane
+                let is_cursor_col = is_active && col == app.cursor_col;
 
                 let mut style = Style::reset().fg(Color::Yellow);
 
-                // Highlight the paired bracket when cursor is on a paired column
+                // Highlight the paired bracket (works across all panes)
                 if let Some(paired_col) = app.structure_cache.get_pair(app.cursor_col) {
                     if col == paired_col {
                         style = style.add_modifier(Modifier::BOLD | Modifier::REVERSED);
@@ -388,12 +477,32 @@ pub fn visible_dimensions(
     max_id_len: usize,
     show_ruler: bool,
     show_row_numbers: bool,
+    split_mode: Option<SplitMode>,
 ) -> (usize, usize) {
     let id_formatter = IdFormatter::new(num_sequences, max_id_len.max(10), show_row_numbers);
     let ruler_height = if show_ruler { RULER_HEIGHT } else { 0 };
-    // 4 = borders (2) + status (1) + command (1), plus ruler height if shown
-    let inner_height = area.height.saturating_sub(4 + ruler_height) as usize;
-    let inner_width = (area.width as usize).saturating_sub(id_formatter.width() + 2); // borders
+
+    // Calculate the alignment area (total - status - command)
+    let alignment_area_height = area.height.saturating_sub(2); // status + command
+    let alignment_area_width = area.width;
+
+    // Calculate pane dimensions based on split mode
+    let (pane_height, pane_width) = match split_mode {
+        None => (alignment_area_height, alignment_area_width),
+        Some(SplitMode::Horizontal) => {
+            // Each pane gets ~50% of height
+            (alignment_area_height / 2, alignment_area_width)
+        }
+        Some(SplitMode::Vertical) => {
+            // Each pane gets ~50% of width
+            (alignment_area_height, alignment_area_width / 2)
+        }
+    };
+
+    // Subtract borders (2) and ruler height, then calculate sequence area
+    let inner_height = pane_height.saturating_sub(2 + ruler_height) as usize;
+    let inner_width = (pane_width as usize).saturating_sub(id_formatter.width() + 2);
+
     (inner_height, inner_width)
 }
 
@@ -404,12 +513,18 @@ fn render_help(frame: &mut Frame) {
         Line::from(""),
         Line::from(Span::styled("Navigation", Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow))),
         Line::from("  h/j/k/l     Move cursor"),
-        Line::from("  0 / $       Start/end of line"),
+        Line::from("  0 ^ / $     Start/end of line"),
         Line::from("  gg / G      First/last sequence"),
         Line::from("  Ctrl-f/b    Page down/up"),
         Line::from("  Ctrl-d/u    Half page down/up"),
         Line::from("  gp          Go to paired base"),
         Line::from("  N|          Go to column N"),
+        Line::from(""),
+        Line::from(Span::styled("Split Windows", Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow))),
+        Line::from("  Ctrl-w s    Horizontal split (:sp)"),
+        Line::from("  Ctrl-w v    Vertical split (:vs)"),
+        Line::from("  Ctrl-w hjkl Switch pane (or arrows)"),
+        Line::from("  Ctrl-w q    Close split (:q or :only)"),
         Line::from(""),
         Line::from(Span::styled("Editing", Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow))),
         Line::from("  i           Insert mode (then . for gap)"),
