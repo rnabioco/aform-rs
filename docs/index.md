@@ -1,0 +1,33 @@
+# aform-rs
+
+Terminal-based Stockholm alignment editor with vim-style modal editing.
+
+![Main editor view](images/editor.png)
+
+## Features
+
+- **Vim-style editing** - Modal editing with Normal, Insert, Visual, and Command modes
+- **RNA structure** - Base pair highlighting from SS_cons annotations
+- **Color schemes** - Structure, nucleotide, conservation, and compensatory coloring
+- **Block selection** - Visual block mode for rectangular selections
+- **Undo/redo** - Full history with efficient copy-on-write sequences
+
+### Structure Coloring
+
+![Structure coloring mode](images/structure-coloring.png)
+
+### Visual Block Selection
+
+![Visual block selection](images/visual-mode.png)
+
+## Quick Start
+
+```bash
+# Open a Stockholm file
+aform-rs alignment.stk
+
+# With structure coloring
+aform-rs --color structure alignment.stk
+```
+
+Press `?` for help within the editor.

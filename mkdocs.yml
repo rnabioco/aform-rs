@@ -1,0 +1,29 @@
+site_name: aform-rs
+site_url: https://rnabioco.github.io/aform-rs
+site_description: Terminal-based Stockholm alignment editor with vim-style modal editing
+repo_url: https://github.com/rnabioco/aform-rs
+repo_name: rnabioco/aform-rs
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: teal
+    accent: cyan
+  features:
+    - content.code.copy
+    - navigation.sections
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - tables
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Usage: usage.md
