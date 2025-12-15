@@ -35,15 +35,80 @@ use app::{App, TerminalTheme};
 #[derive(Parser, Debug)]
 #[command(name = "aform-rs")]
 #[command(author, version, about, long_about = None)]
+#[command(after_help = AFTER_HELP)]
 struct Args {
     /// Stockholm alignment file to open.
     #[arg(value_name = "FILE")]
     file: Option<PathBuf>,
 
-    /// Initial color scheme (none, structure, base, conservation).
+    /// Initial color scheme (none, structure, base, conservation, compensatory).
     #[arg(short, long, default_value = "none")]
     color: String,
+
+    /// Show consensus sequence.
+    #[arg(long)]
+    consensus: bool,
+
+    /// Show conservation bar.
+    #[arg(long)]
+    conservation: bool,
+
+    /// Cluster sequences by similarity.
+    #[arg(long)]
+    cluster: bool,
+
+    /// Collapse identical sequences.
+    #[arg(long)]
+    collapse: bool,
+
+    /// Show dendrogram tree (implies --cluster).
+    #[arg(long)]
+    tree: bool,
+
+    /// Show column ruler.
+    #[arg(long)]
+    ruler: bool,
+
+    /// Show row numbers.
+    #[arg(long)]
+    rownum: bool,
 }
+
+const AFTER_HELP: &str = "\
+INTERACTIVE COMMANDS:
+  Press ':' to enter command mode, then type a command and press Enter.
+  Press '?' for interactive help overlay.
+
+VISUALIZATION:
+  :ruler          Toggle column ruler
+  :rownum         Toggle row numbers
+  :split / :sp    Horizontal split view
+  :vsplit / :vs   Vertical split view
+  :only           Close split view
+  :tree           Toggle dendrogram tree (requires :cluster)
+
+CONSERVATION:
+  :conservation   Toggle conservation bar (shows column-wise identity)
+  :consbar        Alias for :conservation
+
+CONSENSUS:
+  :consensus      Toggle consensus sequence display
+
+CLUSTERING:
+  :cluster        Cluster sequences by similarity (UPGMA)
+  :uncluster      Restore original sequence order
+  :collapse       Toggle collapsing identical sequences
+  :tree           Show/hide dendrogram tree
+
+COLOR SCHEMES:
+  :color none         No coloring
+  :color structure    Color by secondary structure (helix pairs)
+  :color base         Color by nucleotide/amino acid identity
+  :color conservation Color by column conservation
+  :color compensatory Color by compensatory mutations (requires SS_cons)
+
+  Aliases: ss=structure, nt/residue/aa/protein=base, cons=conservation, comp=compensatory
+";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
@@ -75,6 +140,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Auto-detect sequence type and precompute collapse groups
             app.detect_sequence_type();
             app.precompute_collapse_groups();
+        }
+    }
+
+    // Apply display options from CLI
+    app.show_consensus = args.consensus;
+    app.show_conservation_bar = args.conservation;
+    app.show_ruler = args.ruler;
+    app.show_row_numbers = args.rownum;
+
+    // Apply clustering options (only if file loaded)
+    if app.alignment.num_sequences() > 0 {
+        if args.collapse {
+            app.toggle_collapse_identical();
+        }
+        if args.cluster || args.tree {
+            app.cluster_sequences();
+        }
+        if args.tree {
+            app.show_tree = true;
         }
     }
 
