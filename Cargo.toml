@@ -1,6 +1,6 @@
 [package]
 name = "aform-rs"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 edition = "2024"
 description = "Terminal Stockholm alignment editor inspired by Emacs ralee mode"
 license = "MIT"
