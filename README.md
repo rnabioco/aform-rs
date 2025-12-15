@@ -10,6 +10,7 @@ A terminal-based Stockholm alignment editor for RNA sequences, inspired by [Emac
 - **Structure-aware navigation**: Jump to paired bases in the secondary structure
 - **Alignment editing**: Insert/delete gaps, shift sequences, undo/redo
 - **ViennaRNA integration**: Optional folding with RNAfold and RNAalifold (requires ViennaRNA package)
+- **Sequence clustering**: Cluster sequences by similarity (UPGMA) with dendrogram visualization
 
 ## Installation
 
@@ -85,6 +86,9 @@ Options:
 | `:set gap=<char>` | Set gap character |
 | `:fold` | Fold current sequence (requires RNAfold) |
 | `:alifold` | Fold alignment (requires RNAalifold) |
+| `:cluster` | Cluster sequences by similarity |
+| `:uncluster` | Restore original sequence order |
+| `:tree` | Toggle dendrogram tree display |
 
 ## Color Schemes
 

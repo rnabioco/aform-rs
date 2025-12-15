@@ -9,7 +9,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
 };
 
-use crate::app::{ActivePane, App, ColorScheme, Mode, SplitMode};
+use crate::app::{ActivePane, App, ColorScheme, Mode, SplitMode, TerminalTheme};
 use crate::color::get_color;
 
 /// Render the application UI.
@@ -159,6 +159,7 @@ impl IdFormatter {
 }
 
 /// Render an alignment pane with the given viewport.
+/// Layout: IDs | Alignment (with ruler above, SS_cons below) | Tree
 fn render_alignment_pane(
     frame: &mut Frame,
     app: &App,
@@ -208,54 +209,253 @@ fn render_alignment_pane(
     let max_id_len = app.alignment.max_id_len().max(10);
     let id_formatter = IdFormatter::new(num_seqs, max_id_len, app.show_row_numbers);
     let id_width = id_formatter.width();
-    let seq_width = (inner.width as usize).saturating_sub(id_width);
 
-    // Split inner area into ruler (fixed top), sequences (flexible), SS_cons (fixed bottom)
+    // Account for tree width if showing (separator + tree column)
+    let tree_display_width = if app.show_tree && app.cluster_tree.is_some() {
+        app.tree_width + 1
+    } else {
+        0
+    };
+
+    // Calculate alignment column width (cap at actual alignment width)
+    let alignment_width = app.alignment.width();
+    let available_width = (inner.width as usize)
+        .saturating_sub(id_width + 1) // +1 for separator after IDs
+        .saturating_sub(tree_display_width);
+    let seq_width = alignment_width.min(available_width);
+
+    // Vertical layout dimensions
     let ruler_height = if app.show_ruler { RULER_HEIGHT } else { 0 };
     let has_ss_cons = app.alignment.ss_cons().is_some();
     let ss_cons_height: u16 = if has_ss_cons { 1 } else { 0 };
-    let chunks = Layout::default()
+
+    // Calculate visible rows (inner height minus ruler and SS_cons)
+    let visible_rows = (inner.height as usize)
+        .saturating_sub(ruler_height as usize)
+        .saturating_sub(ss_cons_height as usize);
+
+    // === Split horizontally: IDs | Alignment | Tree | Filler ===
+    let h_constraints = if tree_display_width > 0 {
+        vec![
+            Constraint::Length(id_width as u16),       // IDs column
+            Constraint::Length(1),                     // Separator
+            Constraint::Length(seq_width as u16),      // Alignment column (capped)
+            Constraint::Length(1),                     // Separator
+            Constraint::Length(app.tree_width as u16), // Tree column
+            Constraint::Min(0),                        // Filler (absorbs extra space)
+        ]
+    } else {
+        vec![
+            Constraint::Length(id_width as u16),  // IDs column
+            Constraint::Length(1),                // Separator
+            Constraint::Length(seq_width as u16), // Alignment column (capped)
+            Constraint::Min(0),                   // Filler (absorbs extra space)
+        ]
+    };
+
+    let h_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(h_constraints)
+        .split(inner);
+
+    let ids_area = h_chunks[0];
+    let align_area = h_chunks[2];
+    let tree_area = if tree_display_width > 0 {
+        Some(h_chunks[4])
+    } else {
+        None
+    };
+
+    // === Render IDs column (with vertical alignment to match sequences) ===
+    render_ids_column(
+        frame,
+        app,
+        ids_area,
+        viewport_row,
+        visible_rows,
+        &id_formatter,
+        ruler_height,
+        ss_cons_height,
+    );
+
+    // === Render separator line ===
+    render_separator(frame, h_chunks[1], ruler_height, ss_cons_height);
+
+    // === Render alignment column (with ruler above, SS_cons below) ===
+    render_alignment_column(
+        frame,
+        app,
+        align_area,
+        viewport_row,
+        viewport_col,
+        visible_rows,
+        seq_width,
+        ruler_height,
+        ss_cons_height,
+        is_active,
+    );
+
+    // === Render tree column if present ===
+    if let Some(tree_rect) = tree_area {
+        // Render separator before tree
+        render_separator(frame, h_chunks[3], ruler_height, ss_cons_height);
+        render_tree_column(
+            frame,
+            app,
+            tree_rect,
+            viewport_row,
+            visible_rows,
+            ruler_height,
+            ss_cons_height,
+        );
+    }
+}
+
+/// Render the IDs column (sequence identifiers).
+#[allow(clippy::too_many_arguments)]
+fn render_ids_column(
+    frame: &mut Frame,
+    app: &App,
+    area: Rect,
+    viewport_row: usize,
+    visible_rows: usize,
+    id_formatter: &IdFormatter,
+    ruler_height: u16,
+    ss_cons_height: u16,
+) {
+    // Split to match alignment layout (blank space for ruler/SS_cons rows)
+    let v_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(ruler_height),
             Constraint::Min(1),
             Constraint::Length(ss_cons_height),
         ])
-        .split(inner);
+        .split(area);
 
-    let ruler_area = chunks[0];
-    let seq_area = chunks[1];
-    let ss_cons_area = chunks[2];
-    let visible_rows = seq_area.height as usize;
+    let ids_seq_area = v_chunks[1];
+    let ids_ss_cons_area = v_chunks[2];
 
-    // Render sticky ruler (if enabled)
+    // Render sequence IDs
+    let mut lines = Vec::new();
+    for display_row in viewport_row..(viewport_row + visible_rows).min(app.visible_sequence_count())
+    {
+        let actual_row = app.display_to_actual_row(display_row);
+        let seq = &app.alignment.sequences[actual_row];
+
+        let id_style = if display_row == app.cursor_row {
+            Style::reset().add_modifier(Modifier::BOLD)
+        } else {
+            Style::reset().fg(Color::Cyan)
+        };
+
+        let id_display = id_formatter.format(display_row, &seq.id);
+        lines.push(Line::from(Span::styled(id_display, id_style)));
+    }
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, ids_seq_area);
+
+    // Render SS_cons label if present
+    if app.alignment.ss_cons().is_some() {
+        let ss_label = format!(
+            "{:>row_w$} {:id_w$}",
+            "═",
+            "#=GC SS_cons",
+            row_w = id_formatter.row_width,
+            id_w = id_formatter.id_width
+        );
+        let label_line = Paragraph::new(Line::from(Span::styled(
+            ss_label,
+            Style::reset().fg(Color::Yellow).bg(Color::Rgb(30, 30, 40)),
+        )));
+        frame.render_widget(label_line, ids_ss_cons_area);
+    }
+}
+
+/// Render a vertical separator line.
+fn render_separator(frame: &mut Frame, area: Rect, ruler_height: u16, ss_cons_height: u16) {
+    let mut lines = Vec::new();
+
+    // Blank space for ruler area
+    for _ in 0..ruler_height {
+        lines.push(Line::from(Span::styled(
+            "│",
+            Style::reset().fg(Color::DarkGray),
+        )));
+    }
+
+    // Separator for sequence rows
+    let seq_rows = area
+        .height
+        .saturating_sub(ruler_height)
+        .saturating_sub(ss_cons_height);
+    for _ in 0..seq_rows {
+        lines.push(Line::from(Span::styled(
+            "│",
+            Style::reset().fg(Color::DarkGray),
+        )));
+    }
+
+    // Separator for SS_cons
+    for _ in 0..ss_cons_height {
+        lines.push(Line::from(Span::styled(
+            "│",
+            Style::reset().fg(Color::DarkGray),
+        )));
+    }
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, area);
+}
+
+/// Render the alignment column (ruler + sequences + SS_cons).
+#[allow(clippy::too_many_arguments)]
+fn render_alignment_column(
+    frame: &mut Frame,
+    app: &App,
+    area: Rect,
+    viewport_row: usize,
+    viewport_col: usize,
+    visible_rows: usize,
+    seq_width: usize,
+    ruler_height: u16,
+    ss_cons_height: u16,
+    is_active: bool,
+) {
+    // Split alignment area vertically: ruler | sequences | SS_cons
+    let v_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(ruler_height),
+            Constraint::Min(1),
+            Constraint::Length(ss_cons_height),
+        ])
+        .split(area);
+
+    let ruler_area = v_chunks[0];
+    let seq_area = v_chunks[1];
+    let ss_cons_area = v_chunks[2];
+
+    // Render ruler (no ID padding - ruler is only over alignment)
     if app.show_ruler {
-        let ruler_lines = render_ruler(id_width, seq_width, viewport_col);
+        let ruler_lines = render_ruler(0, seq_width, viewport_col);
         let ruler_paragraph = Paragraph::new(ruler_lines);
         frame.render_widget(ruler_paragraph, ruler_area);
     }
 
     // Render sequences
     let mut lines = Vec::new();
-    for row in viewport_row..(viewport_row + visible_rows).min(app.alignment.num_sequences()) {
-        let seq = &app.alignment.sequences[row];
+    for display_row in viewport_row..(viewport_row + visible_rows).min(app.visible_sequence_count())
+    {
+        let actual_row = app.display_to_actual_row(display_row);
+        let seq = &app.alignment.sequences[actual_row];
         let mut spans = Vec::new();
 
-        // Row number and sequence ID
-        let id_style = if row == app.cursor_row {
-            Style::reset().add_modifier(Modifier::BOLD)
-        } else {
-            Style::reset().fg(Color::Cyan)
-        };
-        let id_display = id_formatter.format(row, &seq.id);
-        spans.push(Span::styled(id_display, id_style));
-
-        // Sequence data
         let seq_chars: Vec<char> = seq.chars().to_vec();
         for col in viewport_col..(viewport_col + seq_width).min(seq_chars.len()) {
             let ch = seq_chars[col];
-            // Only show cursor in active pane
-            let is_cursor = is_active && row == app.cursor_row && col == app.cursor_col;
+            let is_cursor = is_active && display_row == app.cursor_row && col == app.cursor_col;
 
             let mut style = Style::reset();
 
@@ -264,7 +464,7 @@ fn render_alignment_pane(
                 app.color_scheme,
                 ch,
                 col,
-                row,
+                actual_row,
                 &app.alignment,
                 &app.structure_cache,
                 &app.gap_chars,
@@ -274,30 +474,27 @@ fn render_alignment_pane(
             }
 
             // Highlight search matches
-            if let Some(is_current) = app.is_search_match(row, col) {
+            if let Some(is_current) = app.is_search_match(actual_row, col) {
                 if is_current {
-                    // Current match: bright yellow background
                     style = style.bg(Color::Yellow).fg(Color::Black);
                 } else {
-                    // Other matches: dimmer highlight
                     style = style.bg(Color::Rgb(100, 100, 50)).fg(Color::White);
                 }
             }
 
             // Highlight visual selection
-            if app.is_selected(row, col) {
+            if app.is_selected(display_row, col) {
                 style = style.bg(Color::Rgb(80, 80, 140)).fg(Color::White);
             }
 
-            // Highlight paired column (works across all panes)
-            if let Some(paired_col) = app.structure_cache.get_pair(app.cursor_col) {
-                if col == paired_col {
-                    // Bright magenta background to clearly show the paired base
-                    style = style.bg(Color::Magenta).fg(Color::White);
-                }
+            // Highlight paired column
+            if let Some(paired_col) = app.structure_cache.get_pair(app.cursor_col)
+                && col == paired_col
+            {
+                style = style.bg(Color::Magenta).fg(Color::White);
             }
 
-            // Highlight cursor (on top of everything)
+            // Highlight cursor
             if is_cursor {
                 style = style.add_modifier(Modifier::REVERSED);
             }
@@ -311,41 +508,28 @@ fn render_alignment_pane(
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, seq_area);
 
-    // Render SS_cons annotation bar (fixed at bottom, like ruler)
+    // Render SS_cons (no ID padding - only over alignment)
     if let Some(ss) = app.alignment.ss_cons() {
         let mut spans = Vec::new();
-        // Use blank row number area + SS_cons label with distinct background
-        let ss_label = format!(
-            "{:>row_w$} {:id_w$} ",
-            "═",
-            "#=GC SS_cons",
-            row_w = id_formatter.row_width,
-            id_w = id_formatter.id_width
-        );
-        spans.push(Span::styled(
-            ss_label,
-            Style::reset().fg(Color::Yellow).bg(Color::Rgb(30, 30, 40)),
-        ));
 
         let ss_chars: Vec<char> = ss.chars().collect();
         for col in viewport_col..(viewport_col + seq_width).min(ss_chars.len()) {
             let ch = ss_chars[col];
-            // Only show cursor column highlight in active pane
             let is_cursor_col = is_active && col == app.cursor_col;
 
             let mut style = Style::reset().fg(Color::Yellow).bg(Color::Rgb(30, 30, 40));
 
-            // Highlight the paired bracket (works across all panes)
-            if let Some(paired_col) = app.structure_cache.get_pair(app.cursor_col) {
-                if col == paired_col {
-                    style = style
-                        .fg(Color::Black)
-                        .bg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD);
-                }
+            // Highlight paired bracket
+            if let Some(paired_col) = app.structure_cache.get_pair(app.cursor_col)
+                && col == paired_col
+            {
+                style = style
+                    .fg(Color::Black)
+                    .bg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD);
             }
 
-            // Column indicator (not cursor - just shows which column)
+            // Column indicator
             if is_cursor_col {
                 style = style.add_modifier(Modifier::UNDERLINED);
             }
@@ -356,6 +540,53 @@ fn render_alignment_pane(
         let ss_line = Paragraph::new(Line::from(spans));
         frame.render_widget(ss_line, ss_cons_area);
     }
+}
+
+/// Render the tree/dendrogram column.
+fn render_tree_column(
+    frame: &mut Frame,
+    app: &App,
+    area: Rect,
+    viewport_row: usize,
+    visible_rows: usize,
+    ruler_height: u16,
+    ss_cons_height: u16,
+) {
+    // Split to match alignment layout (blank space for ruler/SS_cons rows)
+    let v_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(ruler_height),
+            Constraint::Min(1),
+            Constraint::Length(ss_cons_height),
+        ])
+        .split(area);
+
+    let tree_seq_area = v_chunks[1];
+
+    // Render tree lines
+    let mut lines = Vec::new();
+    if let Some(ref tree_lines) = app.cluster_tree {
+        for display_row in
+            viewport_row..(viewport_row + visible_rows).min(app.visible_sequence_count())
+        {
+            if let Some(tree_str) = tree_lines.get(display_row) {
+                let tree_color = match app.terminal_theme {
+                    TerminalTheme::Dark => Color::White,
+                    TerminalTheme::Light => Color::Black,
+                };
+                lines.push(Line::from(Span::styled(
+                    tree_str.clone(),
+                    Style::reset().fg(tree_color),
+                )));
+            } else {
+                lines.push(Line::from(""));
+            }
+        }
+    }
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, tree_seq_area);
 }
 
 /// Render the position ruler (returns two lines: numbers and tick marks).
@@ -515,6 +746,7 @@ fn render_command_line(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 /// Calculate visible dimensions for the alignment area.
+#[allow(clippy::too_many_arguments)]
 pub fn visible_dimensions(
     area: Rect,
     num_sequences: usize,
@@ -523,6 +755,8 @@ pub fn visible_dimensions(
     show_row_numbers: bool,
     split_mode: Option<SplitMode>,
     has_ss_cons: bool,
+    tree_display_width: usize,
+    alignment_width: usize,
 ) -> (usize, usize) {
     let id_formatter = IdFormatter::new(num_sequences, max_id_len.max(10), show_row_numbers);
     let ruler_height = if show_ruler { RULER_HEIGHT } else { 0 };
@@ -545,9 +779,13 @@ pub fn visible_dimensions(
         }
     };
 
-    // Subtract borders (2), ruler height, and SS_cons height
+    // Subtract borders (2), ruler height, SS_cons height, and tree width
+    // Cap at alignment width (no excess space beyond alignment)
     let inner_height = pane_height.saturating_sub(2 + ruler_height + ss_cons_height) as usize;
-    let inner_width = (pane_width as usize).saturating_sub(id_formatter.width() + 2);
+    let inner_width = (pane_width as usize)
+        .saturating_sub(id_formatter.width() + 2)
+        .saturating_sub(tree_display_width)
+        .min(alignment_width);
 
     (inner_height, inner_width)
 }
@@ -744,6 +982,9 @@ fn render_help(frame: &mut Frame) {
         Line::from("  :color X    Set color (ss/base/cons/off)"),
         Line::from("  :ruler      Toggle position ruler"),
         Line::from("  :rownum     Toggle row numbers"),
+        Line::from("  :cluster    Cluster sequences by similarity"),
+        Line::from("  :uncluster  Restore original order"),
+        Line::from("  :tree       Toggle dendrogram tree"),
         Line::from("  :help       Show this help"),
         Line::from(""),
         Line::from(Span::styled(

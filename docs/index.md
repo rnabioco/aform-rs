@@ -11,6 +11,7 @@ Terminal-based Stockholm alignment editor with vim-style modal editing.
 - **Color schemes** - Structure, nucleotide, conservation, and compensatory coloring
 - **Block selection** - Visual block mode for rectangular selections
 - **Undo/redo** - Full history with efficient copy-on-write sequences
+- **Sequence clustering** - Cluster sequences by similarity with dendrogram visualization
 
 ### Structure Coloring
 

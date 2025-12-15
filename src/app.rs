@@ -90,6 +90,16 @@ pub enum ActivePane {
     Secondary,
 }
 
+/// Terminal color theme (detected at startup).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TerminalTheme {
+    /// Light background - use dark colors for contrast.
+    Light,
+    /// Dark background - use light colors for contrast.
+    #[default]
+    Dark,
+}
+
 /// Application state.
 pub struct App {
     // === Public - Core data ===
@@ -173,6 +183,19 @@ pub struct App {
     pub(crate) selection_anchor: Option<(usize, usize)>,
     /// Clipboard for yanked block (rectangular selection).
     pub(crate) clipboard: Option<Vec<Vec<char>>>,
+
+    // === Clustering state ===
+    /// Cluster-based display ordering (indices into alignment.sequences).
+    /// When active, sequences are displayed in dendrogram order (similar sequences adjacent).
+    pub(crate) cluster_order: Option<Vec<usize>>,
+    /// Pre-computed ASCII tree characters for each display row.
+    pub(crate) cluster_tree: Option<Vec<String>>,
+    /// Width of the tree column in characters.
+    pub(crate) tree_width: usize,
+    /// Whether to show the dendrogram tree visualization.
+    pub(crate) show_tree: bool,
+    /// Terminal color theme (detected at startup).
+    pub terminal_theme: TerminalTheme,
 }
 
 impl Default for App {
@@ -212,6 +235,11 @@ impl Default for App {
             file_explorer: None,
             selection_anchor: None,
             clipboard: None,
+            cluster_order: None,
+            cluster_tree: None,
+            tree_width: 0,
+            show_tree: false,
+            terminal_theme: TerminalTheme::Dark,
         }
     }
 }
@@ -816,16 +844,16 @@ impl App {
 
     /// Jump to the current match and update status.
     fn jump_to_current_match(&mut self) {
-        if let Some(idx) = self.search_match_index {
-            if let Some(&(row, start_col, _end_col)) = self.search_matches.get(idx) {
-                self.cursor_row = row;
-                self.cursor_col = start_col;
-                self.set_status(format!(
-                    "Match {}/{} (ignoring gaps)",
-                    idx + 1,
-                    self.search_matches.len()
-                ));
-            }
+        if let Some(idx) = self.search_match_index
+            && let Some(&(row, start_col, _end_col)) = self.search_matches.get(idx)
+        {
+            self.cursor_row = row;
+            self.cursor_col = start_col;
+            self.set_status(format!(
+                "Match {}/{} (ignoring gaps)",
+                idx + 1,
+                self.search_matches.len()
+            ));
         }
     }
 
@@ -975,6 +1003,25 @@ impl App {
             ["noh" | "nohlsearch"] => {
                 self.clear_search();
             }
+            ["cluster"] => {
+                self.cluster_sequences();
+                self.set_status(format!(
+                    "Clustered {} sequences by similarity",
+                    self.alignment.num_sequences()
+                ));
+            }
+            ["uncluster"] => {
+                self.uncluster();
+                self.set_status("Clustering disabled");
+            }
+            ["tree"] => {
+                self.toggle_tree();
+                if self.show_tree {
+                    self.set_status("Tree visible");
+                } else if self.cluster_tree.is_some() {
+                    self.set_status("Tree hidden");
+                }
+            }
             _ => {
                 // Check if command is a line number (e.g., :1, :42)
                 if let Ok(line_num) = command.parse::<usize>() {
@@ -1095,10 +1142,10 @@ impl App {
 
     /// Update the structure cache if needed.
     pub fn update_structure_cache(&mut self) {
-        if let Some(ss) = self.alignment.ss_cons() {
-            if !self.structure_cache.is_valid_for(ss) {
-                let _ = self.structure_cache.update(ss);
-            }
+        if let Some(ss) = self.alignment.ss_cons()
+            && !self.structure_cache.is_valid_for(ss)
+        {
+            let _ = self.structure_cache.update(ss);
         }
     }
 
@@ -1125,5 +1172,71 @@ impl App {
         } else if self.cursor_col >= self.viewport_col + visible_cols {
             self.viewport_col = self.cursor_col - visible_cols + 1;
         }
+    }
+
+    // === Clustering methods ===
+
+    /// Map display row to actual sequence index.
+    /// When clustering is active, sequences are displayed in dendrogram order.
+    pub fn display_to_actual_row(&self, display_row: usize) -> usize {
+        if let Some(ref order) = self.cluster_order {
+            order.get(display_row).copied().unwrap_or(display_row)
+        } else {
+            display_row
+        }
+    }
+
+    /// Get the number of visible sequences (same as total when no collapse).
+    pub fn visible_sequence_count(&self) -> usize {
+        self.alignment.num_sequences()
+    }
+
+    /// Cluster sequences by similarity using hierarchical clustering.
+    pub fn cluster_sequences(&mut self) {
+        if self.alignment.sequences.is_empty() {
+            return;
+        }
+
+        // Get sequence chars for clustering
+        let seq_chars: Vec<Vec<char>> = self
+            .alignment
+            .sequences
+            .iter()
+            .map(|s| s.chars().to_vec())
+            .collect();
+
+        // Compute cluster order and tree using UPGMA
+        let result = crate::clustering::cluster_sequences_with_tree(&seq_chars, &self.gap_chars);
+        self.cluster_order = Some(result.order);
+        self.cluster_tree = Some(result.tree_lines);
+        self.tree_width = result.tree_width;
+
+        // Clamp cursor to valid range
+        if self.cursor_row >= self.visible_sequence_count() {
+            self.cursor_row = self.visible_sequence_count().saturating_sub(1);
+        }
+    }
+
+    /// Disable clustering and restore original order.
+    pub fn uncluster(&mut self) {
+        self.cluster_order = None;
+        self.cluster_tree = None;
+        self.tree_width = 0;
+        self.show_tree = false;
+    }
+
+    /// Toggle dendrogram tree visibility.
+    pub fn toggle_tree(&mut self) {
+        if self.cluster_tree.is_some() {
+            self.show_tree = !self.show_tree;
+        } else {
+            self.status_message = Some("No tree available. Run :cluster first.".to_string());
+        }
+    }
+
+    /// Check if clustering is currently active.
+    #[allow(dead_code)]
+    pub fn is_clustered(&self) -> bool {
+        self.cluster_order.is_some()
     }
 }

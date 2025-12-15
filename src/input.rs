@@ -349,17 +349,17 @@ fn handle_browse_mode(app: &mut App, key: KeyEvent) {
     }
 
     // Handle Enter to select file
-    if key.code == KeyCode::Enter {
-        if let Some(ref explorer) = app.file_explorer {
-            let current = explorer.current();
-            if current.is_file() {
-                let path = current.path().to_path_buf();
-                app.exit_browse_mode();
-                if let Err(e) = app.load_file(&path) {
-                    app.set_status(e);
-                }
-                return;
+    if key.code == KeyCode::Enter
+        && let Some(ref explorer) = app.file_explorer
+    {
+        let current = explorer.current();
+        if current.is_file() {
+            let path = current.path().to_path_buf();
+            app.exit_browse_mode();
+            if let Err(e) = app.load_file(&path) {
+                app.set_status(e);
             }
+            return;
         }
     }
 

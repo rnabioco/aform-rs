@@ -81,6 +81,17 @@ In Normal mode, `p` pastes the yanked block.
 | `:fold` | Run RNAfold on current sequence |
 | `:alifold` | Run RNAalifold on alignment |
 | `:noh` | Clear search highlighting |
+| `:cluster` | Cluster sequences by similarity |
+| `:uncluster` | Restore original sequence order |
+| `:tree` | Toggle dendrogram tree display |
+
+## Clustering
+
+Cluster sequences by pairwise similarity using `:cluster`. This reorders sequences using hierarchical agglomerative clustering (UPGMA algorithm with Hamming distance), grouping similar sequences together.
+
+Use `:tree` to show a dendrogram alongside the alignment, visualizing sequence relationships. The tree uses ASCII box-drawing characters and adapts to your terminal's color scheme.
+
+To restore the original sequence order, use `:uncluster`.
 
 ## Color Schemes
 

@@ -420,11 +420,11 @@ impl Sequence {
 
     /// Delete a character at a specific position if it's a gap.
     pub fn delete_gap(&mut self, pos: usize, gap_chars: &[char]) -> bool {
-        if let Some(&ch) = self.chars.get(pos) {
-            if gap_chars.contains(&ch) {
-                self.chars.remove(pos);
-                return true;
-            }
+        if let Some(&ch) = self.chars.get(pos)
+            && gap_chars.contains(&ch)
+        {
+            self.chars.remove(pos);
+            return true;
         }
         false
     }

@@ -47,12 +47,12 @@ impl App {
             let seq = Rc::make_mut(seq_rc);
             if seq.delete_gap(self.cursor_col, &self.gap_chars) {
                 // Also update associated #=GR annotations
-                if let Some(id) = seq_id {
-                    if let Some(annotations) = self.alignment.residue_annotations.get_mut(&id) {
-                        for ann in annotations {
-                            if self.cursor_col < ann.data.len() {
-                                ann.data.remove(self.cursor_col);
-                            }
+                if let Some(id) = seq_id
+                    && let Some(annotations) = self.alignment.residue_annotations.get_mut(&id)
+                {
+                    for ann in annotations {
+                        if self.cursor_col < ann.data.len() {
+                            ann.data.remove(self.cursor_col);
                         }
                     }
                 }
@@ -102,14 +102,13 @@ impl App {
             let seq = Rc::make_mut(seq_rc);
             if seq.shift(self.cursor_col, direction, &self.gap_chars) {
                 // Also shift associated #=GR annotations
-                if let Some(id) = seq_id {
-                    if let Some(annotations) = self.alignment.residue_annotations.get_mut(&id) {
-                        for ann in annotations {
-                            let mut temp =
-                                crate::stockholm::Sequence::new("temp", ann.data.clone());
-                            temp.shift(self.cursor_col, direction, &self.gap_chars);
-                            ann.data = temp.data();
-                        }
+                if let Some(id) = seq_id
+                    && let Some(annotations) = self.alignment.residue_annotations.get_mut(&id)
+                {
+                    for ann in annotations {
+                        let mut temp = crate::stockholm::Sequence::new("temp", ann.data.clone());
+                        temp.shift(self.cursor_col, direction, &self.gap_chars);
+                        ann.data = temp.data();
                     }
                 }
                 return true;
