@@ -2,7 +2,7 @@
 
 A terminal-based Stockholm alignment editor for RNA, DNA, and protein sequences.
 
-![aform-rs editor demo](docs/images/editor.gif)
+![aform-rs editor demo](docs/images/readme.gif)
 
 ## Features
 
