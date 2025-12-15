@@ -49,40 +49,40 @@ pub const DNA_BASE_COLORS: [(char, Color); 2] = [
 /// - Special: C (yellow), G (magenta), P (pink), Y (cyan)
 pub const AMINO_ACID_COLORS: [(char, Color); 40] = [
     // Hydrophobic (nonpolar) - orange/brown
-    ('A', Color::Rgb(230, 159, 0)),  // Alanine - orange
+    ('A', Color::Rgb(230, 159, 0)), // Alanine - orange
     ('a', Color::Rgb(230, 159, 0)),
-    ('I', Color::Rgb(204, 121, 0)),  // Isoleucine - darker orange
+    ('I', Color::Rgb(204, 121, 0)), // Isoleucine - darker orange
     ('i', Color::Rgb(204, 121, 0)),
-    ('L', Color::Rgb(204, 121, 0)),  // Leucine - darker orange
+    ('L', Color::Rgb(204, 121, 0)), // Leucine - darker orange
     ('l', Color::Rgb(204, 121, 0)),
-    ('M', Color::Rgb(230, 159, 0)),  // Methionine - orange
+    ('M', Color::Rgb(230, 159, 0)), // Methionine - orange
     ('m', Color::Rgb(230, 159, 0)),
-    ('F', Color::Rgb(166, 86, 40)),  // Phenylalanine - brown
+    ('F', Color::Rgb(166, 86, 40)), // Phenylalanine - brown
     ('f', Color::Rgb(166, 86, 40)),
-    ('W', Color::Rgb(166, 86, 40)),  // Tryptophan - brown
+    ('W', Color::Rgb(166, 86, 40)), // Tryptophan - brown
     ('w', Color::Rgb(166, 86, 40)),
-    ('V', Color::Rgb(204, 121, 0)),  // Valine - darker orange
+    ('V', Color::Rgb(204, 121, 0)), // Valine - darker orange
     ('v', Color::Rgb(204, 121, 0)),
     // Polar uncharged - green
-    ('S', Color::Rgb(0, 158, 115)),  // Serine - green
+    ('S', Color::Rgb(0, 158, 115)), // Serine - green
     ('s', Color::Rgb(0, 158, 115)),
-    ('T', Color::Rgb(0, 158, 115)),  // Threonine - green (note: conflicts with DNA T)
+    ('T', Color::Rgb(0, 158, 115)), // Threonine - green (note: conflicts with DNA T)
     ('t', Color::Rgb(0, 158, 115)),
     ('N', Color::Rgb(86, 180, 133)), // Asparagine - light green
     ('n', Color::Rgb(86, 180, 133)),
     ('Q', Color::Rgb(86, 180, 133)), // Glutamine - light green
     ('q', Color::Rgb(86, 180, 133)),
     // Charged positive - blue
-    ('K', Color::Rgb(0, 114, 178)),  // Lysine - blue
+    ('K', Color::Rgb(0, 114, 178)), // Lysine - blue
     ('k', Color::Rgb(0, 114, 178)),
-    ('R', Color::Rgb(0, 114, 178)),  // Arginine - blue
+    ('R', Color::Rgb(0, 114, 178)), // Arginine - blue
     ('r', Color::Rgb(0, 114, 178)),
     ('H', Color::Rgb(86, 180, 233)), // Histidine - light blue
     ('h', Color::Rgb(86, 180, 233)),
     // Charged negative - red
-    ('D', Color::Rgb(213, 94, 0)),   // Aspartate - red-orange
+    ('D', Color::Rgb(213, 94, 0)), // Aspartate - red-orange
     ('d', Color::Rgb(213, 94, 0)),
-    ('E', Color::Rgb(204, 51, 17)),  // Glutamate - red
+    ('E', Color::Rgb(204, 51, 17)), // Glutamate - red
     ('e', Color::Rgb(204, 51, 17)),
     // Special amino acids - distinct colors
     ('C', Color::Rgb(240, 228, 66)), // Cysteine - yellow
@@ -91,7 +91,7 @@ pub const AMINO_ACID_COLORS: [(char, Color); 40] = [
     ('g', Color::Rgb(204, 121, 167)),
     ('P', Color::Rgb(255, 182, 193)), // Proline - light pink
     ('p', Color::Rgb(255, 182, 193)),
-    ('Y', Color::Rgb(0, 191, 196)),  // Tyrosine - cyan
+    ('Y', Color::Rgb(0, 191, 196)), // Tyrosine - cyan
     ('y', Color::Rgb(0, 191, 196)),
 ];
 

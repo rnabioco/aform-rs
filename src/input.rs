@@ -300,9 +300,6 @@ fn handle_command_mode(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Backspace => {
             app.command_buffer.pop();
-            if app.command_buffer.is_empty() {
-                app.enter_normal_mode();
-            }
         }
         KeyCode::Up => {
             app.command_history_prev();

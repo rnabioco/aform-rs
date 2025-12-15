@@ -507,7 +507,8 @@ fn render_alignment_column(
     let annotation_height = ss_cons_height + consensus_height + conservation_height;
 
     // Calculate actual sequence rows to display (may be less than visible_rows)
-    let actual_seq_rows = (app.visible_sequence_count().saturating_sub(viewport_row)).min(visible_rows);
+    let actual_seq_rows =
+        (app.visible_sequence_count().saturating_sub(viewport_row)).min(visible_rows);
 
     // Split alignment area vertically: ruler | sequences | annotations | filler
     // Use Length for sequences so annotations follow immediately after
@@ -646,7 +647,14 @@ fn render_alignment_column(
 
     // Render consensus bar
     if app.show_consensus {
-        render_consensus_bar(frame, app, consensus_area, viewport_col, seq_width, is_active);
+        render_consensus_bar(
+            frame,
+            app,
+            consensus_area,
+            viewport_col,
+            seq_width,
+            is_active,
+        );
     }
 
     // Render conservation bar
@@ -677,8 +685,12 @@ fn render_consensus_bar(
     let alignment_width = app.alignment.width();
 
     for col in viewport_col..(viewport_col + seq_width).min(alignment_width) {
-        let ch =
-            get_consensus_char_with_case(col, &app.alignment, &app.gap_chars, app.consensus_threshold);
+        let ch = get_consensus_char_with_case(
+            col,
+            &app.alignment,
+            &app.gap_chars,
+            app.consensus_threshold,
+        );
         let is_cursor_col = is_active && col == app.cursor_col;
 
         let mut style = Style::reset().fg(Color::Cyan).bg(Color::Rgb(30, 40, 30));

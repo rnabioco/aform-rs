@@ -1069,38 +1069,40 @@ impl App {
                 self.show_conservation_bar = !self.show_conservation_bar;
                 self.set_status(format!(
                     "Conservation bar: {}",
-                    if self.show_conservation_bar { "on" } else { "off" }
+                    if self.show_conservation_bar {
+                        "on"
+                    } else {
+                        "off"
+                    }
                 ));
             }
             ["type"] => {
                 self.set_status(format!("Sequence type: {:?}", self.sequence_type));
             }
-            ["type", t] => {
-                match t.to_lowercase().as_str() {
-                    "rna" => {
-                        self.sequence_type = SequenceType::RNA;
-                        self.set_status("Sequence type: RNA");
-                    }
-                    "dna" => {
-                        self.sequence_type = SequenceType::DNA;
-                        self.set_status("Sequence type: DNA");
-                    }
-                    "protein" | "aa" => {
-                        self.sequence_type = SequenceType::Protein;
-                        self.set_status("Sequence type: Protein");
-                    }
-                    "auto" => {
-                        self.detect_sequence_type();
-                        self.set_status(format!("Detected sequence type: {:?}", self.sequence_type));
-                    }
-                    _ => {
-                        self.set_status(format!(
-                            "Unknown sequence type: {} (use rna, dna, protein, or auto)",
-                            t
-                        ));
-                    }
+            ["type", t] => match t.to_lowercase().as_str() {
+                "rna" => {
+                    self.sequence_type = SequenceType::RNA;
+                    self.set_status("Sequence type: RNA");
                 }
-            }
+                "dna" => {
+                    self.sequence_type = SequenceType::DNA;
+                    self.set_status("Sequence type: DNA");
+                }
+                "protein" | "aa" => {
+                    self.sequence_type = SequenceType::Protein;
+                    self.set_status("Sequence type: Protein");
+                }
+                "auto" => {
+                    self.detect_sequence_type();
+                    self.set_status(format!("Detected sequence type: {:?}", self.sequence_type));
+                }
+                _ => {
+                    self.set_status(format!(
+                        "Unknown sequence type: {} (use rna, dna, protein, or auto)",
+                        t
+                    ));
+                }
+            },
             _ => {
                 // Check if command is a line number (e.g., :1, :42)
                 if let Ok(line_num) = command.parse::<usize>() {
