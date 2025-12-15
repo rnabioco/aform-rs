@@ -132,7 +132,7 @@ Toggle annotation bars below the alignment:
 | Command | Description |
 |---------|-------------|
 | `:consensus` | Show consensus sequence (uppercase = high conservation) |
-| `:conservation` | Show conservation level with block characters (░▒▓█) |
+| `:conservation` | Show conservation level with height-varying bars (▁▂▃▄▅▆▇█) |
 
 ## Collapse Identical Sequences
 

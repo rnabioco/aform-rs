@@ -312,18 +312,26 @@ pub fn get_consensus_char_with_case(
 }
 
 /// Convert conservation score (0.0-1.0) to a block character and color.
-/// Uses Unicode block characters to show conservation level visually.
+/// Uses height-varying Unicode block characters with color gradient.
 pub fn conservation_to_block(conservation: f64) -> (char, Color) {
-    if conservation >= 0.9 {
-        ('\u{2588}', Color::Rgb(0, 255, 255)) // Full block - cyan (█)
+    if conservation >= 0.95 {
+        ('█', Color::Rgb(0, 255, 0)) // Full block - bright green
+    } else if conservation >= 0.85 {
+        ('▇', Color::Rgb(50, 205, 50)) // 7/8 - lime green
     } else if conservation >= 0.75 {
-        ('\u{2593}', Color::Rgb(135, 206, 235)) // Dark shade - skyblue (▓)
-    } else if conservation >= 0.5 {
-        ('\u{2592}', Color::Rgb(169, 169, 169)) // Medium shade - gray (▒)
+        ('▆', Color::Rgb(100, 200, 100)) // 6/8 - green
+    } else if conservation >= 0.65 {
+        ('▅', Color::Rgb(150, 200, 100)) // 5/8 - yellow-green
+    } else if conservation >= 0.55 {
+        ('▄', Color::Rgb(200, 200, 100)) // 4/8 - yellow
+    } else if conservation >= 0.45 {
+        ('▃', Color::Rgb(200, 150, 100)) // 3/8 - orange
+    } else if conservation >= 0.35 {
+        ('▂', Color::Rgb(200, 100, 100)) // 2/8 - red-orange
     } else if conservation >= 0.25 {
-        ('\u{2591}', Color::Rgb(105, 105, 105)) // Light shade - dimgray (░)
+        ('▁', Color::Rgb(150, 80, 80)) // 1/8 - dark red
     } else {
-        (' ', Color::DarkGray) // No block for very low conservation
+        (' ', Color::DarkGray) // Empty for very low conservation
     }
 }
 
