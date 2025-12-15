@@ -10,7 +10,10 @@ impl App {
     pub fn insert_gap(&mut self) {
         self.save_undo_state();
 
-        if let Some(seq_rc) = self.alignment.sequences.get_mut(self.cursor_row) {
+        // Translate display row to actual sequence index (for clustering support)
+        let actual_row = self.display_to_actual_row(self.cursor_row);
+
+        if let Some(seq_rc) = self.alignment.sequences.get_mut(actual_row) {
             let seq = Rc::make_mut(seq_rc);
             seq.insert_gap(self.cursor_col, self.gap_char);
 
@@ -37,13 +40,16 @@ impl App {
 
         self.save_undo_state();
 
+        // Translate display row to actual sequence index (for clustering support)
+        let actual_row = self.display_to_actual_row(self.cursor_row);
+
         let seq_id = self
             .alignment
             .sequences
-            .get(self.cursor_row)
+            .get(actual_row)
             .map(|s| s.id.clone());
 
-        if let Some(seq_rc) = self.alignment.sequences.get_mut(self.cursor_row) {
+        if let Some(seq_rc) = self.alignment.sequences.get_mut(actual_row) {
             let seq = Rc::make_mut(seq_rc);
             if seq.delete_gap(self.cursor_col, &self.gap_chars) {
                 // Also update associated #=GR annotations
@@ -92,13 +98,16 @@ impl App {
 
     /// Internal shift without undo/status - consolidated implementation.
     fn shift_sequence_internal(&mut self, direction: ShiftDirection) -> bool {
+        // Translate display row to actual sequence index (for clustering support)
+        let actual_row = self.display_to_actual_row(self.cursor_row);
+
         let seq_id = self
             .alignment
             .sequences
-            .get(self.cursor_row)
+            .get(actual_row)
             .map(|s| s.id.clone());
 
-        if let Some(seq_rc) = self.alignment.sequences.get_mut(self.cursor_row) {
+        if let Some(seq_rc) = self.alignment.sequences.get_mut(actual_row) {
             let seq = Rc::make_mut(seq_rc);
             if seq.shift(self.cursor_col, direction, &self.gap_chars) {
                 // Also shift associated #=GR annotations
@@ -219,8 +228,11 @@ impl App {
 
         self.save_undo_state();
 
-        let seq_id = self.alignment.sequences[self.cursor_row].id.clone();
-        self.alignment.sequences.remove(self.cursor_row);
+        // Translate display row to actual sequence index (for clustering support)
+        let actual_row = self.display_to_actual_row(self.cursor_row);
+
+        let seq_id = self.alignment.sequences[actual_row].id.clone();
+        self.alignment.sequences.remove(actual_row);
 
         // Remove associated annotations
         self.alignment.sequence_annotations.remove(&seq_id);
@@ -228,6 +240,12 @@ impl App {
 
         self.mark_modified();
         self.clamp_cursor();
+
+        // Recompute clustering if active (indices become stale after deletion)
+        if self.cluster_order.is_some() {
+            self.precompute_collapse_groups(); // Refresh group indices first
+            self.cluster_sequences();
+        }
     }
 
     /// Convert alignment to uppercase.
