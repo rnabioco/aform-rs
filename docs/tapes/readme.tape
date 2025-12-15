@@ -15,7 +15,6 @@ Set Padding 20
 Set Theme "Dracula"
 Set WindowBar Colorful
 Set Margin 20
-Set MarginFill "#674EFF"
 Set BorderRadius 10
 
 # === Section 1: Basic Editor & Color Schemes ===
