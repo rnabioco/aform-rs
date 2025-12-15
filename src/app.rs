@@ -173,6 +173,11 @@ pub struct App {
     pub(crate) selection_anchor: Option<(usize, usize)>,
     /// Clipboard for yanked block (rectangular selection).
     pub(crate) clipboard: Option<Vec<Vec<char>>>,
+
+    // === Clustering state ===
+    /// Cluster-based display ordering (indices into alignment.sequences).
+    /// When active, sequences are displayed in dendrogram order (similar sequences adjacent).
+    pub(crate) cluster_order: Option<Vec<usize>>,
 }
 
 impl Default for App {
@@ -212,6 +217,7 @@ impl Default for App {
             file_explorer: None,
             selection_anchor: None,
             clipboard: None,
+            cluster_order: None,
         }
     }
 }
@@ -975,6 +981,17 @@ impl App {
             ["noh" | "nohlsearch"] => {
                 self.clear_search();
             }
+            ["cluster"] => {
+                self.cluster_sequences();
+                self.set_status(format!(
+                    "Clustered {} sequences by similarity",
+                    self.alignment.num_sequences()
+                ));
+            }
+            ["uncluster"] => {
+                self.uncluster();
+                self.set_status("Clustering disabled");
+            }
             _ => {
                 // Check if command is a line number (e.g., :1, :42)
                 if let Ok(line_num) = command.parse::<usize>() {
@@ -1125,5 +1142,56 @@ impl App {
         } else if self.cursor_col >= self.viewport_col + visible_cols {
             self.viewport_col = self.cursor_col - visible_cols + 1;
         }
+    }
+
+    // === Clustering methods ===
+
+    /// Map display row to actual sequence index.
+    /// When clustering is active, sequences are displayed in dendrogram order.
+    pub fn display_to_actual_row(&self, display_row: usize) -> usize {
+        if let Some(ref order) = self.cluster_order {
+            order.get(display_row).copied().unwrap_or(display_row)
+        } else {
+            display_row
+        }
+    }
+
+    /// Get the number of visible sequences (same as total when no collapse).
+    pub fn visible_sequence_count(&self) -> usize {
+        self.alignment.num_sequences()
+    }
+
+    /// Cluster sequences by similarity using hierarchical clustering.
+    pub fn cluster_sequences(&mut self) {
+        if self.alignment.sequences.is_empty() {
+            return;
+        }
+
+        // Get sequence chars for clustering
+        let seq_chars: Vec<Vec<char>> = self
+            .alignment
+            .sequences
+            .iter()
+            .map(|s| s.chars().to_vec())
+            .collect();
+
+        // Compute cluster order using UPGMA
+        self.cluster_order = Some(crate::clustering::cluster_sequences(&seq_chars, &self.gap_chars));
+
+        // Clamp cursor to valid range
+        if self.cursor_row >= self.visible_sequence_count() {
+            self.cursor_row = self.visible_sequence_count().saturating_sub(1);
+        }
+    }
+
+    /// Disable clustering and restore original order.
+    pub fn uncluster(&mut self) {
+        self.cluster_order = None;
+    }
+
+    /// Check if clustering is currently active.
+    #[allow(dead_code)]
+    pub fn is_clustered(&self) -> bool {
+        self.cluster_order.is_some()
     }
 }

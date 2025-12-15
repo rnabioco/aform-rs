@@ -4,6 +4,7 @@
 //! inspired by Emacs ralee mode.
 
 mod app;
+mod clustering;
 mod color;
 mod editor;
 mod external;
@@ -94,7 +95,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         let area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
         let (visible_rows, visible_cols) = ui::visible_dimensions(
             area,
-            app.alignment.num_sequences(),
+            app.visible_sequence_count(),
             app.alignment.max_id_len(),
             app.show_ruler,
             app.show_row_numbers,

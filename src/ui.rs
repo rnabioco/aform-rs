@@ -237,34 +237,36 @@ fn render_alignment_pane(
 
     // Render sequences
     let mut lines = Vec::new();
-    for row in viewport_row..(viewport_row + visible_rows).min(app.alignment.num_sequences()) {
-        let seq = &app.alignment.sequences[row];
+    for display_row in viewport_row..(viewport_row + visible_rows).min(app.visible_sequence_count()) {
+        // Map display row to actual sequence index (for clustering support)
+        let actual_row = app.display_to_actual_row(display_row);
+        let seq = &app.alignment.sequences[actual_row];
         let mut spans = Vec::new();
 
-        // Row number and sequence ID
-        let id_style = if row == app.cursor_row {
+        // Row number and sequence ID (show display row number, not actual)
+        let id_style = if display_row == app.cursor_row {
             Style::reset().add_modifier(Modifier::BOLD)
         } else {
             Style::reset().fg(Color::Cyan)
         };
-        let id_display = id_formatter.format(row, &seq.id);
+        let id_display = id_formatter.format(display_row, &seq.id);
         spans.push(Span::styled(id_display, id_style));
 
         // Sequence data
         let seq_chars: Vec<char> = seq.chars().to_vec();
         for col in viewport_col..(viewport_col + seq_width).min(seq_chars.len()) {
             let ch = seq_chars[col];
-            // Only show cursor in active pane
-            let is_cursor = is_active && row == app.cursor_row && col == app.cursor_col;
+            // Only show cursor in active pane (cursor_row is in display coordinates)
+            let is_cursor = is_active && display_row == app.cursor_row && col == app.cursor_col;
 
             let mut style = Style::reset();
 
-            // Apply color scheme
+            // Apply color scheme (use actual_row for alignment data)
             if let Some(color) = get_color(
                 app.color_scheme,
                 ch,
                 col,
-                row,
+                actual_row,
                 &app.alignment,
                 &app.structure_cache,
                 &app.gap_chars,
@@ -273,8 +275,8 @@ fn render_alignment_pane(
                 style = style.bg(color).fg(Color::Black);
             }
 
-            // Highlight search matches
-            if let Some(is_current) = app.is_search_match(row, col) {
+            // Highlight search matches (use actual_row since matches are on actual sequences)
+            if let Some(is_current) = app.is_search_match(actual_row, col) {
                 if is_current {
                     // Current match: bright yellow background
                     style = style.bg(Color::Yellow).fg(Color::Black);
@@ -284,8 +286,8 @@ fn render_alignment_pane(
                 }
             }
 
-            // Highlight visual selection
-            if app.is_selected(row, col) {
+            // Highlight visual selection (use display_row since selection is visual)
+            if app.is_selected(display_row, col) {
                 style = style.bg(Color::Rgb(80, 80, 140)).fg(Color::White);
             }
 
