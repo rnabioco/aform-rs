@@ -77,8 +77,6 @@ In Normal mode, `p` pastes the yanked block.
 | `:lower` | Convert to lowercase |
 | `:t2u` | Convert T to U |
 | `:u2t` | Convert U to T |
-| `:fold` | Run RNAfold on current sequence |
-| `:alifold` | Run RNAalifold on alignment |
 | `:noh` | Clear search highlighting |
 | `:cluster` | Cluster sequences by similarity |
 | `:uncluster` | Restore original sequence order |

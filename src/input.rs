@@ -90,6 +90,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent, page_size: usize) {
         return;
     }
 
+    // Close info overlay on any keypress
+    if app.show_info {
+        app.show_info = false;
+        return;
+    }
+
     match app.mode {
         Mode::Normal => handle_normal_mode(app, key, page_size),
         Mode::Insert => handle_insert_mode(app, key),

@@ -111,6 +111,27 @@ pub const COMP_DOUBLE_INCOMPATIBLE: Color = Color::Red;
 pub const COMP_SINGLE_INCOMPATIBLE: Color = Color::Rgb(255, 165, 0); // orange
 pub const COMP_GAP: Color = Color::Magenta;
 
+/// Convert a PP (posterior probability) character to a color.
+/// PP values: 0-9 (probability * 10), * = highest (>0.95).
+/// Uses a red-yellow-green gradient.
+pub fn pp_to_color(ch: char) -> Color {
+    match ch {
+        '*' => Color::Rgb(0, 255, 0),    // Bright green - highest confidence
+        '9' => Color::Rgb(50, 220, 50),  // Green
+        '8' => Color::Rgb(100, 200, 50), // Yellow-green
+        '7' => Color::Rgb(150, 200, 50), // Yellow-green
+        '6' => Color::Rgb(200, 200, 50), // Yellow
+        '5' => Color::Rgb(220, 180, 50), // Yellow-orange
+        '4' => Color::Rgb(220, 150, 50), // Orange
+        '3' => Color::Rgb(220, 120, 50), // Orange
+        '2' => Color::Rgb(200, 80, 50),  // Red-orange
+        '1' => Color::Rgb(180, 50, 50),  // Dark red
+        '0' => Color::Rgb(150, 50, 50),  // Dark red - lowest confidence
+        '.' | '-' => Color::DarkGray,    // Gap
+        _ => Color::Gray,                // Unknown
+    }
+}
+
 /// Get color for a character based on the color scheme.
 #[allow(clippy::too_many_arguments)]
 pub fn get_color(
@@ -132,6 +153,7 @@ pub fn get_color(
         ColorScheme::Compensatory => {
             get_compensatory_color(col, row, alignment, cache, gap_chars, reference_seq)
         }
+        ColorScheme::PP => get_pp_color(ch, col, row, alignment, gap_chars),
     }
 }
 
@@ -264,6 +286,34 @@ fn get_compensatory_color(
         CompensatoryChange::InvolvesGap => Some(COMP_GAP),
         CompensatoryChange::Unpaired => None,
     }
+}
+
+/// Get color based on per-residue PP (posterior probability) annotation.
+fn get_pp_color(
+    ch: char,
+    col: usize,
+    row: usize,
+    alignment: &Alignment,
+    gap_chars: &[char],
+) -> Option<Color> {
+    // Don't color gaps
+    if gap_chars.contains(&ch) {
+        return None;
+    }
+
+    // Look up PP annotation for this sequence
+    let seq = alignment.sequences.get(row)?;
+    if let Some(annotations) = alignment.residue_annotations.get(&seq.id) {
+        for ann in annotations {
+            if ann.tag == "PP"
+                && let Some(pp_char) = ann.data.chars().nth(col)
+            {
+                return Some(pp_to_color(pp_char));
+            }
+        }
+    }
+
+    None // No PP annotation for this residue
 }
 
 /// Get consensus character for a column.

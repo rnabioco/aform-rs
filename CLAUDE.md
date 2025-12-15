@@ -53,8 +53,6 @@ aform-rs is a terminal-based Stockholm alignment editor for RNA sequences, using
 
 - **`src/color/`**: Color schemes (none, structure/helix, base/nucleotide, conservation, compensatory)
 
-- **`src/external/`**: ViennaRNA integration (RNAfold/RNAalifold)
-
 ### Key Design Patterns
 
 - **Copy-on-write sequences**: `Alignment.sequences` uses `Vec<Rc<Sequence>>` for efficient undo/redo. Use `Rc::make_mut()` when modifying sequences.

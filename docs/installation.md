@@ -27,15 +27,3 @@ cargo build --release
 ```
 
 The binary will be at `target/release/aform`.
-
-## Optional: ViennaRNA
-
-For RNA folding features (`:fold`, `:alifold`), install [ViennaRNA](https://www.tbi.univie.ac.at/RNA/).
-
-```bash
-# macOS
-brew install viennarna
-
-# Ubuntu/Debian
-sudo apt install viennarna
-```

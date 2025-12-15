@@ -208,12 +208,36 @@ impl Alignment {
     }
 
     /// Get the reference sequence annotation if present.
-    #[allow(dead_code)] // API for reference sequence access
     pub fn rf(&self) -> Option<&str> {
         self.column_annotations
             .iter()
             .find(|a| a.tag == "RF")
             .map(|a| a.data.as_str())
+    }
+
+    /// Get the posterior probability consensus annotation if present.
+    pub fn pp_cons(&self) -> Option<&str> {
+        self.column_annotations
+            .iter()
+            .find(|a| a.tag == "PP_cons")
+            .map(|a| a.data.as_str())
+    }
+
+    /// Get a file-level annotation value by tag.
+    pub fn get_file_annotation(&self, tag: &str) -> Option<&str> {
+        self.file_annotations
+            .iter()
+            .find(|a| a.tag == tag)
+            .map(|a| a.value.as_str())
+    }
+
+    /// Get all file-level annotations with a given tag (for multi-line annotations like CC).
+    pub fn get_file_annotations(&self, tag: &str) -> Vec<&str> {
+        self.file_annotations
+            .iter()
+            .filter(|a| a.tag == tag)
+            .map(|a| a.value.as_str())
+            .collect()
     }
 
     /// Check if all sequences have the same length.
@@ -310,11 +334,16 @@ impl Alignment {
         false
     }
 
-    /// Check if a column contains only gap characters.
+    /// Check if a column contains only gap characters (private helper).
     fn is_gap_column(&self, col: usize, gap_chars: &[char]) -> bool {
         self.sequences
             .iter()
             .all(|s| s.get(col).map(|c| gap_chars.contains(&c)).unwrap_or(true))
+    }
+
+    /// Check if a column contains only gap characters (public API for UI highlighting).
+    pub fn is_empty_column(&self, col: usize, gap_chars: &[char]) -> bool {
+        self.is_gap_column(col, gap_chars)
     }
 
     /// Remove leading gap-only columns from the alignment.

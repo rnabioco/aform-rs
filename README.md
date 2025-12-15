@@ -12,7 +12,6 @@ A terminal-based Stockholm alignment editor for RNA, DNA, and protein sequences,
 - **Alignment editing**: Insert/delete gaps, shift sequences, undo/redo
 - **Annotation bars**: Optional consensus sequence and conservation level visualization
 - **Collapse identical sequences**: Group and collapse identical sequences to reduce clutter
-- **ViennaRNA integration**: Optional folding with RNAfold and RNAalifold (requires ViennaRNA package)
 - **Sequence clustering**: Cluster sequences by similarity (UPGMA) with dendrogram visualization
 
 ## Installation
@@ -96,8 +95,6 @@ Options:
 | `:w <path>` | Save to new file |
 | `:color <scheme>` | Set color scheme (see below) |
 | `:set gap=<char>` | Set gap character |
-| `:fold` | Fold current sequence (requires RNAfold) |
-| `:alifold` | Fold alignment (requires RNAalifold) |
 | `:cluster` | Cluster sequences by similarity |
 | `:uncluster` | Restore original sequence order |
 | `:tree` | Toggle dendrogram tree display |
@@ -141,9 +138,6 @@ seq2/1-50    ACGU...ACGU
 
 - [ratatui](https://github.com/ratatui/ratatui) - Terminal UI framework
 - [crossterm](https://github.com/crossterm-rs/crossterm) - Terminal manipulation
-
-Optional:
-- [ViennaRNA](https://github.com/ViennaRNA/ViennaRNA) - For RNAfold/RNAalifold integration
 
 ## License
 

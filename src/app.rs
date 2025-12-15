@@ -110,6 +110,8 @@ pub enum ColorScheme {
     Conservation,
     /// Color by compensatory changes.
     Compensatory,
+    /// Color by per-residue posterior probability (#=GR PP).
+    PP,
 }
 
 impl ColorScheme {
@@ -120,6 +122,7 @@ impl ColorScheme {
             "base" | "nt" | "residue" | "aa" | "protein" => Some(ColorScheme::Base),
             "conservation" | "cons" => Some(ColorScheme::Conservation),
             "compensatory" | "comp" => Some(ColorScheme::Compensatory),
+            "pp" | "probability" => Some(ColorScheme::PP),
             _ => None,
         }
     }
@@ -252,12 +255,29 @@ pub struct App {
     pub show_consensus: bool,
     /// Show conservation bar.
     pub show_conservation_bar: bool,
+    /// Show RF (reference) annotation bar.
+    pub show_rf_bar: bool,
+    /// Show PP_cons (posterior probability consensus) bar.
+    pub show_pp_cons: bool,
     /// Conservation threshold for uppercase in consensus (0.0-1.0).
     pub consensus_threshold: f64,
+
+    // === Info overlay ===
+    /// Show file info overlay.
+    pub show_info: bool,
 
     // === Sequence type ===
     /// Detected sequence type (RNA, DNA, or Protein).
     pub sequence_type: SequenceType,
+
+    // === Gap column state ===
+    /// Highlight columns that contain only gaps.
+    pub highlight_gap_columns: bool,
+    /// Hide columns that contain only gaps from display.
+    pub hide_gap_columns: bool,
+    /// Precomputed list of visible (non-empty) column indices.
+    /// Only populated when hide_gap_columns is true.
+    pub(crate) visible_columns: Vec<usize>,
 }
 
 impl Default for App {
@@ -304,8 +324,14 @@ impl Default for App {
             collapse_groups: Vec::new(),
             show_consensus: false,
             show_conservation_bar: false,
+            show_rf_bar: false,
+            show_pp_cons: false,
             consensus_threshold: 0.7,
+            show_info: false,
             sequence_type: SequenceType::RNA,
+            highlight_gap_columns: false,
+            hide_gap_columns: false,
+            visible_columns: Vec::new(),
         }
     }
 }
@@ -387,7 +413,8 @@ impl App {
 
     /// Get the current character under the cursor.
     pub fn current_char(&self) -> Option<char> {
-        self.alignment.get_char(self.cursor_row, self.cursor_col)
+        let actual_row = self.display_to_actual_row(self.cursor_row);
+        self.alignment.get_char(actual_row, self.cursor_col)
     }
 
     /// Check if the current character is a gap.
@@ -413,26 +440,51 @@ impl App {
 
     /// Move cursor left.
     pub fn cursor_left(&mut self) {
-        if self.cursor_col > 0 {
+        if self.hide_gap_columns && !self.visible_columns.is_empty() {
+            // Find previous visible column
+            if let Some(display_col) = self.actual_to_display_col(self.cursor_col)
+                && display_col > 0
+            {
+                self.cursor_col = self.display_to_actual_col(display_col - 1);
+            }
+        } else if self.cursor_col > 0 {
             self.cursor_col -= 1;
         }
     }
 
     /// Move cursor right.
     pub fn cursor_right(&mut self) {
-        if self.cursor_col < self.alignment.width().saturating_sub(1) {
+        if self.hide_gap_columns && !self.visible_columns.is_empty() {
+            // Find next visible column
+            if let Some(display_col) = self.actual_to_display_col(self.cursor_col)
+                && display_col < self.visible_columns.len().saturating_sub(1)
+            {
+                self.cursor_col = self.display_to_actual_col(display_col + 1);
+            }
+        } else if self.cursor_col < self.alignment.width().saturating_sub(1) {
             self.cursor_col += 1;
         }
     }
 
     /// Move cursor to start of line.
     pub fn cursor_line_start(&mut self) {
-        self.cursor_col = 0;
+        if self.hide_gap_columns && !self.visible_columns.is_empty() {
+            // Go to first visible column
+            self.cursor_col = self.display_to_actual_col(0);
+        } else {
+            self.cursor_col = 0;
+        }
     }
 
     /// Move cursor to end of line.
     pub fn cursor_line_end(&mut self) {
-        self.cursor_col = self.alignment.width().saturating_sub(1);
+        if self.hide_gap_columns && !self.visible_columns.is_empty() {
+            // Go to last visible column
+            self.cursor_col =
+                self.display_to_actual_col(self.visible_columns.len().saturating_sub(1));
+        } else {
+            self.cursor_col = self.alignment.width().saturating_sub(1);
+        }
     }
 
     /// Move cursor to first sequence.
@@ -454,10 +506,17 @@ impl App {
 
     /// Jump to a specific column (1-indexed, like vim).
     pub fn goto_column(&mut self, col: usize) {
-        let max_col = self.alignment.width().saturating_sub(1);
-        // Convert from 1-indexed to 0-indexed, clamping to valid range
-        let target = col.saturating_sub(1).min(max_col);
-        self.cursor_col = target;
+        if self.hide_gap_columns && !self.visible_columns.is_empty() {
+            // When hiding, col refers to visible column index
+            let max_display_col = self.visible_columns.len().saturating_sub(1);
+            let target_display = col.saturating_sub(1).min(max_display_col);
+            self.cursor_col = self.display_to_actual_col(target_display);
+        } else {
+            let max_col = self.alignment.width().saturating_sub(1);
+            // Convert from 1-indexed to 0-indexed, clamping to valid range
+            let target = col.saturating_sub(1).min(max_col);
+            self.cursor_col = target;
+        }
     }
 
     /// Jump to a specific row (1-indexed, like vim :N).
@@ -512,13 +571,30 @@ impl App {
 
     /// Scroll right.
     pub fn scroll_right(&mut self, amount: usize) {
-        let max_col = self.alignment.width().saturating_sub(1);
-        self.cursor_col = (self.cursor_col + amount).min(max_col);
+        if self.hide_gap_columns && !self.visible_columns.is_empty() {
+            // Move by visible columns
+            if let Some(display_col) = self.actual_to_display_col(self.cursor_col) {
+                let max_display = self.visible_columns.len().saturating_sub(1);
+                let new_display = (display_col + amount).min(max_display);
+                self.cursor_col = self.display_to_actual_col(new_display);
+            }
+        } else {
+            let max_col = self.alignment.width().saturating_sub(1);
+            self.cursor_col = (self.cursor_col + amount).min(max_col);
+        }
     }
 
     /// Scroll left.
     pub fn scroll_left(&mut self, amount: usize) {
-        self.cursor_col = self.cursor_col.saturating_sub(amount);
+        if self.hide_gap_columns && !self.visible_columns.is_empty() {
+            // Move by visible columns
+            if let Some(display_col) = self.actual_to_display_col(self.cursor_col) {
+                let new_display = display_col.saturating_sub(amount);
+                self.cursor_col = self.display_to_actual_col(new_display);
+            }
+        } else {
+            self.cursor_col = self.cursor_col.saturating_sub(amount);
+        }
     }
 
     /// Enter insert mode.
@@ -1001,6 +1077,55 @@ impl App {
                 ));
                 true
             }
+            ["rf"] => {
+                self.show_rf_bar = !self.show_rf_bar;
+                self.set_status(format!(
+                    "RF bar: {}",
+                    if self.show_rf_bar { "on" } else { "off" }
+                ));
+                true
+            }
+            ["ppcons"] | ["pp_cons"] => {
+                self.show_pp_cons = !self.show_pp_cons;
+                self.set_status(format!(
+                    "PP_cons bar: {}",
+                    if self.show_pp_cons { "on" } else { "off" }
+                ));
+                true
+            }
+            ["info"] => {
+                self.show_info = !self.show_info;
+                true
+            }
+            ["gapcols"] | ["gapcol"] => {
+                self.highlight_gap_columns = !self.highlight_gap_columns;
+                self.set_status(format!(
+                    "Gap column highlighting: {}",
+                    if self.highlight_gap_columns {
+                        "on"
+                    } else {
+                        "off"
+                    }
+                ));
+                true
+            }
+            ["hidegaps"] | ["hidegap"] => {
+                self.hide_gap_columns = !self.hide_gap_columns;
+                self.precompute_visible_columns();
+                // Ensure cursor is on a visible column
+                if self.hide_gap_columns
+                    && !self.visible_columns.is_empty()
+                    && self.actual_to_display_col(self.cursor_col).is_none()
+                {
+                    // Snap to nearest visible column
+                    self.cursor_col = self.visible_columns.first().copied().unwrap_or(0);
+                }
+                self.set_status(format!(
+                    "Hide gap columns: {}",
+                    if self.hide_gap_columns { "on" } else { "off" }
+                ));
+                true
+            }
             ["color", scheme] => {
                 if let Some(s) = ColorScheme::from_str(scheme) {
                     self.color_scheme = s;
@@ -1118,14 +1243,6 @@ impl App {
                 self.trim();
                 true
             }
-            ["fold"] => {
-                self.fold_current_sequence();
-                true
-            }
-            ["alifold"] => {
-                self.fold_alignment();
-                true
-            }
             _ => false,
         }
     }
@@ -1235,16 +1352,6 @@ impl App {
         self.search.history_next();
     }
 
-    /// Fold current sequence using RNAfold.
-    fn fold_current_sequence(&mut self) {
-        self.set_status("RNAfold integration not yet implemented");
-    }
-
-    /// Fold alignment using RNAalifold.
-    fn fold_alignment(&mut self) {
-        self.set_status("RNAalifold integration not yet implemented");
-    }
-
     /// Mark the alignment as modified.
     pub fn mark_modified(&mut self) {
         self.modified = true;
@@ -1264,9 +1371,24 @@ impl App {
     /// Ensure cursor is within bounds.
     pub fn clamp_cursor(&mut self) {
         let max_row = self.visible_sequence_count().saturating_sub(1);
-        let max_col = self.alignment.width().saturating_sub(1);
         self.cursor_row = self.cursor_row.min(max_row);
-        self.cursor_col = self.cursor_col.min(max_col);
+
+        if self.hide_gap_columns && !self.visible_columns.is_empty() {
+            // Ensure cursor is on a visible column
+            let max_display_col = self.visible_columns.len().saturating_sub(1);
+            if self.actual_to_display_col(self.cursor_col).is_none() {
+                // Snap to nearest visible column
+                self.cursor_col = self
+                    .visible_columns
+                    .first()
+                    .copied()
+                    .unwrap_or(0)
+                    .min(self.display_to_actual_col(max_display_col));
+            }
+        } else {
+            let max_col = self.alignment.width().saturating_sub(1);
+            self.cursor_col = self.cursor_col.min(max_col);
+        }
     }
 
     /// Adjust viewport to keep cursor visible.
@@ -1279,10 +1401,22 @@ impl App {
         }
 
         // Horizontal scrolling
-        if self.cursor_col < self.viewport_col {
-            self.viewport_col = self.cursor_col;
-        } else if self.cursor_col >= self.viewport_col + visible_cols {
-            self.viewport_col = self.cursor_col - visible_cols + 1;
+        if self.hide_gap_columns && !self.visible_columns.is_empty() {
+            // When hiding, viewport_col is in display column space
+            if let Some(cursor_display_col) = self.actual_to_display_col(self.cursor_col) {
+                if cursor_display_col < self.viewport_col {
+                    self.viewport_col = cursor_display_col;
+                } else if cursor_display_col >= self.viewport_col + visible_cols {
+                    self.viewport_col = cursor_display_col - visible_cols + 1;
+                }
+            }
+        } else {
+            // Normal mode - viewport_col is actual column
+            if self.cursor_col < self.viewport_col {
+                self.viewport_col = self.cursor_col;
+            } else if self.cursor_col >= self.viewport_col + visible_cols {
+                self.viewport_col = self.cursor_col - visible_cols + 1;
+            }
         }
     }
 
@@ -1463,5 +1597,49 @@ impl App {
     /// Detect sequence type from alignment content.
     pub fn detect_sequence_type(&mut self) {
         self.sequence_type = crate::color::detect_sequence_type(&self.alignment, &self.gap_chars);
+    }
+
+    // === Gap column methods ===
+
+    /// Precompute visible columns (call after loading alignment or toggling hide_gap_columns).
+    pub fn precompute_visible_columns(&mut self) {
+        if self.hide_gap_columns {
+            self.visible_columns = (0..self.alignment.width())
+                .filter(|&col| !self.alignment.is_empty_column(col, &self.gap_chars))
+                .collect();
+        } else {
+            self.visible_columns.clear();
+        }
+    }
+
+    /// Map display column index to actual column index.
+    pub fn display_to_actual_col(&self, display_col: usize) -> usize {
+        if self.hide_gap_columns && !self.visible_columns.is_empty() {
+            self.visible_columns
+                .get(display_col)
+                .copied()
+                .unwrap_or(display_col)
+        } else {
+            display_col
+        }
+    }
+
+    /// Map actual column index to display column index (returns None if hidden).
+    pub fn actual_to_display_col(&self, actual_col: usize) -> Option<usize> {
+        if self.hide_gap_columns && !self.visible_columns.is_empty() {
+            self.visible_columns.iter().position(|&c| c == actual_col)
+        } else {
+            Some(actual_col)
+        }
+    }
+
+    /// Get number of visible columns.
+    #[allow(dead_code)] // Part of public API for gap column hiding
+    pub fn visible_column_count(&self) -> usize {
+        if self.hide_gap_columns && !self.visible_columns.is_empty() {
+            self.visible_columns.len()
+        } else {
+            self.alignment.width()
+        }
     }
 }

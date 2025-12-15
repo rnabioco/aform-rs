@@ -98,6 +98,11 @@ pub fn render(frame: &mut Frame, app: &App) {
     if app.show_help {
         render_help(frame);
     }
+
+    // Render info overlay if active
+    if app.show_info {
+        render_info(frame, app);
+    }
 }
 
 /// Height of the ruler in lines.
@@ -273,6 +278,14 @@ fn render_alignment_pane(
     let ruler_height = if app.show_ruler { RULER_HEIGHT } else { 0 };
     let has_ss_cons = app.alignment.ss_cons().is_some();
     let ss_cons_height: u16 = if has_ss_cons { 1 } else { 0 };
+    let has_rf = app.alignment.rf().is_some();
+    let rf_height: u16 = if app.show_rf_bar && has_rf { 1 } else { 0 };
+    let has_pp_cons = app.alignment.pp_cons().is_some();
+    let pp_cons_height: u16 = if app.show_pp_cons && has_pp_cons {
+        1
+    } else {
+        0
+    };
     let consensus_height: u16 = if app.show_consensus { 1 } else { 0 };
     let conservation_height: u16 = if app.show_conservation_bar { 1 } else { 0 };
 
@@ -280,6 +293,8 @@ fn render_alignment_pane(
     let visible_rows = (inner.height as usize)
         .saturating_sub(ruler_height as usize)
         .saturating_sub(ss_cons_height as usize)
+        .saturating_sub(rf_height as usize)
+        .saturating_sub(pp_cons_height as usize)
         .saturating_sub(consensus_height as usize)
         .saturating_sub(conservation_height as usize);
 
@@ -316,7 +331,8 @@ fn render_alignment_pane(
     };
 
     // Total annotation bar height
-    let annotation_height = ss_cons_height + consensus_height + conservation_height;
+    let annotation_height =
+        ss_cons_height + rf_height + pp_cons_height + consensus_height + conservation_height;
 
     // Calculate actual sequence rows to display (may be less than visible_rows)
     let actual_seq_rows =
@@ -355,6 +371,8 @@ fn render_alignment_pane(
         seq_width,
         ruler_height,
         ss_cons_height,
+        rf_height,
+        pp_cons_height,
         consensus_height,
         conservation_height,
         is_active,
@@ -451,6 +469,22 @@ fn render_ids_column(
             Color::Rgb(30, 30, 40),
         ));
     }
+    if app.show_rf_bar && app.alignment.rf().is_some() {
+        annotation_lines.push(format_annotation_label(
+            "#=GC RF",
+            id_formatter,
+            Color::Green,
+            Color::Rgb(30, 40, 30),
+        ));
+    }
+    if app.show_pp_cons && app.alignment.pp_cons().is_some() {
+        annotation_lines.push(format_annotation_label(
+            "#=GC PP_cons",
+            id_formatter,
+            Color::Yellow,
+            Color::Rgb(30, 30, 40),
+        ));
+    }
     if app.show_consensus {
         annotation_lines.push(format_annotation_label(
             "Consensus",
@@ -524,12 +558,15 @@ fn render_alignment_column(
     seq_width: usize,
     ruler_height: u16,
     ss_cons_height: u16,
+    rf_height: u16,
+    pp_cons_height: u16,
     consensus_height: u16,
     conservation_height: u16,
     is_active: bool,
 ) {
     // Total annotation bar height
-    let annotation_height = ss_cons_height + consensus_height + conservation_height;
+    let annotation_height =
+        ss_cons_height + rf_height + pp_cons_height + consensus_height + conservation_height;
 
     // Calculate actual sequence rows to display (may be less than visible_rows)
     let actual_seq_rows =
@@ -556,14 +593,18 @@ fn render_alignment_column(
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(ss_cons_height),
+            Constraint::Length(rf_height),
+            Constraint::Length(pp_cons_height),
             Constraint::Length(consensus_height),
             Constraint::Length(conservation_height),
         ])
         .split(annotation_area);
 
     let ss_cons_area = annotation_chunks[0];
-    let consensus_area = annotation_chunks[1];
-    let conservation_area = annotation_chunks[2];
+    let rf_area = annotation_chunks[1];
+    let pp_cons_area = annotation_chunks[2];
+    let consensus_area = annotation_chunks[3];
+    let conservation_area = annotation_chunks[4];
 
     // Render ruler (no ID padding - ruler is only over alignment)
     if app.show_ruler {
@@ -571,6 +612,19 @@ fn render_alignment_column(
         let ruler_paragraph = Paragraph::new(ruler_lines);
         frame.render_widget(ruler_paragraph, ruler_area);
     }
+
+    // Compute columns to render (handles hiding gap columns)
+    let cols_to_render: Vec<usize> = if app.hide_gap_columns && !app.visible_columns.is_empty() {
+        // viewport_col is in display column space when hiding
+        app.visible_columns
+            .iter()
+            .skip(viewport_col)
+            .take(seq_width)
+            .copied()
+            .collect()
+    } else {
+        (viewport_col..(viewport_col + seq_width).min(app.alignment.width())).collect()
+    };
 
     // Render sequences
     let mut lines = Vec::new();
@@ -581,8 +635,8 @@ fn render_alignment_column(
         let mut spans = Vec::new();
 
         let seq_chars: Vec<char> = seq.chars().to_vec();
-        for col in viewport_col..(viewport_col + seq_width).min(seq_chars.len()) {
-            let ch = seq_chars[col];
+        for &col in &cols_to_render {
+            let ch = seq_chars.get(col).copied().unwrap_or(' ');
             let is_cursor = is_active && display_row == app.cursor_row && col == app.cursor_col;
 
             let mut style = Style::reset();
@@ -600,6 +654,11 @@ fn render_alignment_column(
                 app.sequence_type,
             ) {
                 style = style.bg(color).fg(Color::Black);
+            }
+
+            // Highlight empty (all-gap) columns if enabled
+            if app.highlight_gap_columns && app.alignment.is_empty_column(col, &app.gap_chars) {
+                style = style.bg(Color::Rgb(80, 50, 50)); // Dim red background
             }
 
             // Highlight search matches
@@ -642,11 +701,16 @@ fn render_alignment_column(
         let mut spans = Vec::new();
 
         let ss_chars: Vec<char> = ss.chars().collect();
-        for col in viewport_col..(viewport_col + seq_width).min(ss_chars.len()) {
-            let ch = ss_chars[col];
+        for &col in &cols_to_render {
+            let ch = ss_chars.get(col).copied().unwrap_or(' ');
             let is_cursor_col = is_active && col == app.cursor_col;
 
             let mut style = Style::reset().fg(Color::Yellow).bg(Color::Rgb(30, 30, 40));
+
+            // Highlight empty (all-gap) columns if enabled
+            if app.highlight_gap_columns && app.alignment.is_empty_column(col, &app.gap_chars) {
+                style = style.bg(Color::Rgb(80, 50, 50));
+            }
 
             // Highlight paired bracket
             if let Some(paired_col) = app.structure_cache.get_pair(app.cursor_col)
@@ -670,28 +734,44 @@ fn render_alignment_column(
         frame.render_widget(ss_line, ss_cons_area);
     }
 
-    // Render consensus bar
-    if app.show_consensus {
-        render_consensus_bar(
+    // Render RF bar
+    if app.show_rf_bar
+        && let Some(rf) = app.alignment.rf()
+    {
+        render_rf_bar(
             frame,
             app,
-            consensus_area,
-            viewport_col,
-            seq_width,
+            rf,
+            rf_area,
+            &cols_to_render,
             is_active,
+            app.cursor_col,
         );
+    }
+
+    // Render PP_cons bar
+    if app.show_pp_cons
+        && let Some(pp) = app.alignment.pp_cons()
+    {
+        render_pp_cons_bar(
+            frame,
+            app,
+            pp,
+            pp_cons_area,
+            &cols_to_render,
+            is_active,
+            app.cursor_col,
+        );
+    }
+
+    // Render consensus bar
+    if app.show_consensus {
+        render_consensus_bar(frame, app, consensus_area, &cols_to_render, is_active);
     }
 
     // Render conservation bar
     if app.show_conservation_bar {
-        render_conservation_bar(
-            frame,
-            app,
-            conservation_area,
-            viewport_col,
-            seq_width,
-            is_active,
-        );
+        render_conservation_bar(frame, app, conservation_area, &cols_to_render, is_active);
     }
 }
 
@@ -700,16 +780,14 @@ fn render_consensus_bar(
     frame: &mut Frame,
     app: &App,
     area: Rect,
-    viewport_col: usize,
-    seq_width: usize,
+    cols_to_render: &[usize],
     is_active: bool,
 ) {
     use crate::color::get_consensus_char_with_case;
 
     let mut spans = Vec::new();
-    let alignment_width = app.alignment.width();
 
-    for col in viewport_col..(viewport_col + seq_width).min(alignment_width) {
+    for &col in cols_to_render {
         let ch = get_consensus_char_with_case(
             col,
             &app.alignment,
@@ -719,6 +797,11 @@ fn render_consensus_bar(
         let is_cursor_col = is_active && col == app.cursor_col;
 
         let mut style = Style::reset().fg(Color::Cyan).bg(Color::Rgb(30, 40, 30));
+
+        // Highlight empty (all-gap) columns if enabled
+        if app.highlight_gap_columns && app.alignment.is_empty_column(col, &app.gap_chars) {
+            style = style.bg(Color::Rgb(80, 50, 50));
+        }
 
         if is_cursor_col {
             style = style.add_modifier(Modifier::UNDERLINED);
@@ -736,21 +819,104 @@ fn render_conservation_bar(
     frame: &mut Frame,
     app: &App,
     area: Rect,
-    viewport_col: usize,
-    seq_width: usize,
+    cols_to_render: &[usize],
     is_active: bool,
 ) {
     use crate::color::{calculate_conservation, conservation_to_block};
 
     let mut spans = Vec::new();
-    let alignment_width = app.alignment.width();
 
-    for col in viewport_col..(viewport_col + seq_width).min(alignment_width) {
+    for &col in cols_to_render {
         let conservation = calculate_conservation(col, &app.alignment, &app.gap_chars);
         let (ch, color) = conservation_to_block(conservation);
         let is_cursor_col = is_active && col == app.cursor_col;
 
         let mut style = Style::reset().fg(color).bg(Color::Rgb(40, 30, 40));
+
+        // Highlight empty (all-gap) columns if enabled
+        if app.highlight_gap_columns && app.alignment.is_empty_column(col, &app.gap_chars) {
+            style = style.bg(Color::Rgb(80, 50, 50));
+        }
+
+        if is_cursor_col {
+            style = style.add_modifier(Modifier::UNDERLINED);
+        }
+
+        spans.push(Span::styled(ch.to_string(), style));
+    }
+
+    let line = Paragraph::new(Line::from(spans));
+    frame.render_widget(line, area);
+}
+
+/// Render the RF (reference sequence) bar.
+fn render_rf_bar(
+    frame: &mut Frame,
+    app: &App,
+    rf: &str,
+    area: Rect,
+    cols_to_render: &[usize],
+    is_active: bool,
+    cursor_col: usize,
+) {
+    let rf_chars: Vec<char> = rf.chars().collect();
+    let mut spans = Vec::new();
+
+    for &col in cols_to_render {
+        let ch = rf_chars.get(col).copied().unwrap_or(' ');
+        let is_cursor_col = is_active && col == cursor_col;
+
+        // Uppercase or 'x'/'X' = conserved (green), lowercase/gaps = variable (gray)
+        let mut style = if ch.is_uppercase() || ch == 'x' || ch == 'X' {
+            Style::reset().fg(Color::Green).bg(Color::Rgb(30, 40, 30))
+        } else {
+            Style::reset()
+                .fg(Color::DarkGray)
+                .bg(Color::Rgb(30, 30, 30))
+        };
+
+        // Highlight empty (all-gap) columns if enabled
+        if app.highlight_gap_columns && app.alignment.is_empty_column(col, &app.gap_chars) {
+            style = style.bg(Color::Rgb(80, 50, 50));
+        }
+
+        if is_cursor_col {
+            style = style.add_modifier(Modifier::UNDERLINED);
+        }
+
+        spans.push(Span::styled(ch.to_string(), style));
+    }
+
+    let line = Paragraph::new(Line::from(spans));
+    frame.render_widget(line, area);
+}
+
+/// Render the PP_cons (posterior probability consensus) bar.
+fn render_pp_cons_bar(
+    frame: &mut Frame,
+    app: &App,
+    pp: &str,
+    area: Rect,
+    cols_to_render: &[usize],
+    is_active: bool,
+    cursor_col: usize,
+) {
+    use crate::color::pp_to_color;
+
+    let pp_chars: Vec<char> = pp.chars().collect();
+    let mut spans = Vec::new();
+
+    for &col in cols_to_render {
+        let ch = pp_chars.get(col).copied().unwrap_or(' ');
+        let is_cursor_col = is_active && col == cursor_col;
+
+        let color = pp_to_color(ch);
+        let mut style = Style::reset().fg(color).bg(Color::Rgb(30, 30, 40));
+
+        // Highlight empty (all-gap) columns if enabled
+        if app.highlight_gap_columns && app.alignment.is_empty_column(col, &app.gap_chars) {
+            style = style.bg(Color::Rgb(80, 50, 50));
+        }
 
         if is_cursor_col {
             style = style.add_modifier(Modifier::UNDERLINED);
@@ -1003,6 +1169,10 @@ pub fn visible_dimensions(
     show_short_ids: bool,
     split_mode: Option<SplitMode>,
     has_ss_cons: bool,
+    has_rf: bool,
+    show_rf_bar: bool,
+    has_pp_cons: bool,
+    show_pp_cons: bool,
     show_consensus: bool,
     show_conservation_bar: bool,
     max_collapse_count: usize,
@@ -1018,9 +1188,12 @@ pub fn visible_dimensions(
     );
     let ruler_height = if show_ruler { RULER_HEIGHT } else { 0 };
     let ss_cons_height: u16 = if has_ss_cons { 1 } else { 0 };
+    let rf_height: u16 = if show_rf_bar && has_rf { 1 } else { 0 };
+    let pp_cons_height: u16 = if show_pp_cons && has_pp_cons { 1 } else { 0 };
     let consensus_height: u16 = if show_consensus { 1 } else { 0 };
     let conservation_height: u16 = if show_conservation_bar { 1 } else { 0 };
-    let annotation_height = ss_cons_height + consensus_height + conservation_height;
+    let annotation_height =
+        ss_cons_height + rf_height + pp_cons_height + consensus_height + conservation_height;
 
     // Calculate the alignment area (total - status - command)
     let alignment_area_height = area.height.saturating_sub(2); // status + command
@@ -1261,4 +1434,99 @@ fn render_help(frame: &mut Frame) {
         .style(Style::default().bg(Color::Black));
 
     frame.render_widget(help_paragraph, popup_area);
+}
+
+/// Render file info overlay.
+fn render_info(frame: &mut Frame, app: &App) {
+    let mut lines = vec![
+        Line::from(Span::styled(
+            "File Information",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+
+    // Display key annotations
+    let annotations = [
+        ("ID", "Identifier"),
+        ("AC", "Accession"),
+        ("DE", "Description"),
+        ("AU", "Author"),
+        ("SE", "Source"),
+        ("TP", "Type"),
+    ];
+
+    for (tag, label) in annotations {
+        if let Some(value) = app.alignment.get_file_annotation(tag) {
+            lines.push(Line::from(vec![
+                Span::styled(format!("{label}: "), Style::default().fg(Color::Yellow)),
+                Span::raw(value),
+            ]));
+        }
+    }
+
+    // Add CC (comments) if present - may span multiple lines
+    let comments = app.alignment.get_file_annotations("CC");
+    if !comments.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Comments:",
+            Style::default().fg(Color::Yellow),
+        )));
+        for comment in comments.iter().take(5) {
+            // Limit to 5 comment lines
+            lines.push(Line::from(format!("  {comment}")));
+        }
+        if comments.len() > 5 {
+            lines.push(Line::from(Span::styled(
+                format!("  ... and {} more", comments.len() - 5),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+    }
+
+    // Show file path and statistics
+    lines.push(Line::from(""));
+    if let Some(path) = &app.file_path {
+        lines.push(Line::from(vec![
+            Span::styled("File: ", Style::default().fg(Color::Yellow)),
+            Span::raw(path.display().to_string()),
+        ]));
+    }
+    lines.push(Line::from(vec![
+        Span::styled("Sequences: ", Style::default().fg(Color::Yellow)),
+        Span::raw(app.alignment.num_sequences().to_string()),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("Columns: ", Style::default().fg(Color::Yellow)),
+        Span::raw(app.alignment.width().to_string()),
+    ]));
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Press any key to close",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    // Calculate centered popup area
+    let area = frame.area();
+    let popup_width = 60.min(area.width.saturating_sub(4));
+    let popup_height = (lines.len() as u16 + 2).min(area.height.saturating_sub(4));
+    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    // Clear the area and render popup
+    frame.render_widget(Clear, popup_area);
+
+    let info_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Green))
+        .style(Style::default().bg(Color::Black));
+
+    let info_paragraph = Paragraph::new(lines)
+        .block(info_block)
+        .style(Style::default().bg(Color::Black));
+
+    frame.render_widget(info_paragraph, popup_area);
 }

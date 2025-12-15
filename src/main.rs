@@ -7,7 +7,6 @@ mod app;
 mod clustering;
 mod color;
 mod editor;
-mod external;
 mod history;
 mod input;
 mod stockholm;
@@ -221,6 +220,10 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
             app.show_short_ids,
             app.split_mode,
             app.alignment.ss_cons().is_some(),
+            app.alignment.rf().is_some(),
+            app.show_rf_bar,
+            app.alignment.pp_cons().is_some(),
+            app.show_pp_cons,
             app.show_consensus,
             app.show_conservation_bar,
             app.max_collapse_count(),
