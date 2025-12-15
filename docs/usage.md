@@ -84,6 +84,10 @@ In Normal mode, `p` pastes the yanked block.
 | `:cluster` | Cluster sequences by similarity |
 | `:uncluster` | Restore original sequence order |
 | `:tree` | Toggle dendrogram tree display |
+| `:collapse` | Toggle collapse of identical sequences |
+| `:consensus` | Toggle consensus sequence bar |
+| `:conservation` | Toggle conservation level bar |
+| `:type <type>` | Set sequence type (rna/dna/protein/auto) |
 
 ## Clustering
 
@@ -97,12 +101,39 @@ To restore the original sequence order, use `:uncluster`.
 
 Set with `:color <scheme>` or `--color` flag.
 
-| Scheme | Description |
-|--------|-------------|
-| `none` | No coloring |
-| `structure` | Color by helix (rainbow) |
-| `base` | Color by nucleotide |
-| `conservation` | Color by column conservation |
-| `compensatory` | Highlight compensatory mutations |
+| Scheme | Aliases | Description |
+|--------|---------|-------------|
+| `none` | `off` | No coloring |
+| `structure` | `ss` | Color by helix (rainbow) |
+| `base` | `nt`, `protein`, `aa`, `residue` | Color by nucleotide or amino acid |
+| `conservation` | `cons` | Color by column conservation |
+| `compensatory` | `comp` | Highlight compensatory mutations |
+
+The `base` scheme automatically uses nucleotide colors for RNA/DNA or amino acid colors (Taylor scheme) for protein sequences based on auto-detection.
 
 ![Color schemes comparison](images/color-schemes.gif)
+
+## Sequence Type
+
+aform-rs auto-detects the sequence type (RNA, DNA, or Protein) when loading a file. You can also manually set it:
+
+| Command | Description |
+|---------|-------------|
+| `:type` | Show current sequence type |
+| `:type rna` | Set to RNA |
+| `:type dna` | Set to DNA |
+| `:type protein` | Set to Protein |
+| `:type auto` | Auto-detect from alignment |
+
+## Annotation Bars
+
+Toggle annotation bars below the alignment:
+
+| Command | Description |
+|---------|-------------|
+| `:consensus` | Show consensus sequence (uppercase = high conservation) |
+| `:conservation` | Show conservation level with block characters (░▒▓█) |
+
+## Collapse Identical Sequences
+
+Use `:collapse` to group identical sequences together, showing only one representative with a count indicator (e.g., `seq1 (5)` means 5 identical sequences). This reduces visual clutter in alignments with many duplicates.

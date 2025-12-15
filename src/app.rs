@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use ratatui_explorer::FileExplorer;
 
 use crate::editor::History;
-use crate::stockholm::Alignment;
+use crate::stockholm::{Alignment, SequenceType};
 use crate::structure::StructureCache;
 
 /// Editor mode (vim-style).
@@ -65,7 +65,7 @@ impl ColorScheme {
         match s.to_lowercase().as_str() {
             "none" | "off" => Some(ColorScheme::None),
             "structure" | "ss" => Some(ColorScheme::Structure),
-            "base" | "nt" => Some(ColorScheme::Base),
+            "base" | "nt" | "residue" | "aa" | "protein" => Some(ColorScheme::Base),
             "conservation" | "cons" => Some(ColorScheme::Conservation),
             "compensatory" | "comp" => Some(ColorScheme::Compensatory),
             _ => None,
@@ -196,6 +196,24 @@ pub struct App {
     pub(crate) show_tree: bool,
     /// Terminal color theme (detected at startup).
     pub terminal_theme: TerminalTheme,
+
+    // === Collapse state ===
+    /// Whether to collapse identical sequences in display.
+    pub(crate) collapse_identical: bool,
+    /// Mapping from display row to (representative_index, all_group_indices).
+    pub(crate) collapse_groups: Vec<(usize, Vec<usize>)>,
+
+    // === Annotation bar state ===
+    /// Show consensus sequence bar.
+    pub show_consensus: bool,
+    /// Show conservation bar.
+    pub show_conservation_bar: bool,
+    /// Conservation threshold for uppercase in consensus (0.0-1.0).
+    pub consensus_threshold: f64,
+
+    // === Sequence type ===
+    /// Detected sequence type (RNA, DNA, or Protein).
+    pub sequence_type: SequenceType,
 }
 
 impl Default for App {
@@ -240,6 +258,12 @@ impl Default for App {
             tree_width: 0,
             show_tree: false,
             terminal_theme: TerminalTheme::Dark,
+            collapse_identical: false,
+            collapse_groups: Vec::new(),
+            show_consensus: false,
+            show_conservation_bar: false,
+            consensus_threshold: 0.7,
+            sequence_type: SequenceType::RNA,
         }
     }
 }
@@ -320,15 +344,24 @@ impl App {
         self.viewport_col = 0;
         self.history.clear();
 
+        // Reset collapse state
+        self.collapse_identical = false;
+        self.collapse_groups.clear();
+
         // Update structure cache
         if let Some(ss) = self.alignment.ss_cons() {
             let _ = self.structure_cache.update(ss);
         }
 
+        // Detect sequence type and precompute collapse groups
+        self.detect_sequence_type();
+        self.precompute_collapse_groups();
+
         self.set_status(format!(
-            "Loaded {} ({} seqs, SS_cons: {})",
+            "Loaded {} ({} seqs, {:?}, SS_cons: {})",
             path.display(),
             self.alignment.num_sequences(),
+            self.sequence_type,
             self.alignment.ss_cons().is_some()
         ));
         Ok(())
@@ -1022,6 +1055,52 @@ impl App {
                     self.set_status("Tree hidden");
                 }
             }
+            ["collapse"] => {
+                self.toggle_collapse_identical();
+            }
+            ["consensus"] => {
+                self.show_consensus = !self.show_consensus;
+                self.set_status(format!(
+                    "Consensus bar: {}",
+                    if self.show_consensus { "on" } else { "off" }
+                ));
+            }
+            ["conservation"] | ["consbar"] => {
+                self.show_conservation_bar = !self.show_conservation_bar;
+                self.set_status(format!(
+                    "Conservation bar: {}",
+                    if self.show_conservation_bar { "on" } else { "off" }
+                ));
+            }
+            ["type"] => {
+                self.set_status(format!("Sequence type: {:?}", self.sequence_type));
+            }
+            ["type", t] => {
+                match t.to_lowercase().as_str() {
+                    "rna" => {
+                        self.sequence_type = SequenceType::RNA;
+                        self.set_status("Sequence type: RNA");
+                    }
+                    "dna" => {
+                        self.sequence_type = SequenceType::DNA;
+                        self.set_status("Sequence type: DNA");
+                    }
+                    "protein" | "aa" => {
+                        self.sequence_type = SequenceType::Protein;
+                        self.set_status("Sequence type: Protein");
+                    }
+                    "auto" => {
+                        self.detect_sequence_type();
+                        self.set_status(format!("Detected sequence type: {:?}", self.sequence_type));
+                    }
+                    _ => {
+                        self.set_status(format!(
+                            "Unknown sequence type: {} (use rna, dna, protein, or auto)",
+                            t
+                        ));
+                    }
+                }
+            }
             _ => {
                 // Check if command is a line number (e.g., :1, :42)
                 if let Ok(line_num) = command.parse::<usize>() {
@@ -1177,18 +1256,30 @@ impl App {
     // === Clustering methods ===
 
     /// Map display row to actual sequence index.
-    /// When clustering is active, sequences are displayed in dendrogram order.
+    /// When collapse is active, maps to representative. When clustering is active, uses cluster order.
     pub fn display_to_actual_row(&self, display_row: usize) -> usize {
-        if let Some(ref order) = self.cluster_order {
-            order.get(display_row).copied().unwrap_or(display_row)
+        // First apply collapse mapping (if enabled)
+        let row = if self.collapse_identical && display_row < self.collapse_groups.len() {
+            self.collapse_groups[display_row].0
         } else {
             display_row
+        };
+
+        // Then apply cluster mapping (if enabled)
+        if let Some(ref order) = self.cluster_order {
+            order.get(row).copied().unwrap_or(row)
+        } else {
+            row
         }
     }
 
-    /// Get the number of visible sequences (same as total when no collapse).
+    /// Get the number of visible sequences (accounts for collapse).
     pub fn visible_sequence_count(&self) -> usize {
-        self.alignment.num_sequences()
+        if self.collapse_identical && !self.collapse_groups.is_empty() {
+            self.collapse_groups.len()
+        } else {
+            self.alignment.num_sequences()
+        }
     }
 
     /// Cluster sequences by similarity using hierarchical clustering.
@@ -1238,5 +1329,85 @@ impl App {
     #[allow(dead_code)]
     pub fn is_clustered(&self) -> bool {
         self.cluster_order.is_some()
+    }
+
+    // === Collapse identical sequences ===
+
+    /// Pre-compute collapse groups by grouping sequences with identical content.
+    /// Called during load since sequences don't change during viewing.
+    pub fn precompute_collapse_groups(&mut self) {
+        use std::collections::HashMap;
+        self.collapse_groups.clear();
+
+        if self.alignment.sequences.is_empty() {
+            return;
+        }
+
+        // Group by sequence content (chars as String for hashing)
+        let mut content_map: HashMap<String, Vec<usize>> = HashMap::new();
+        for (idx, seq) in self.alignment.sequences.iter().enumerate() {
+            content_map.entry(seq.data()).or_default().push(idx);
+        }
+
+        // Build groups preserving original order (first occurrence is representative)
+        let mut seen = std::collections::HashSet::new();
+        for (idx, seq) in self.alignment.sequences.iter().enumerate() {
+            let content = seq.data();
+            if seen.insert(content.clone()) {
+                let indices = content_map.remove(&content).unwrap();
+                self.collapse_groups.push((idx, indices));
+            }
+        }
+    }
+
+    /// Get collapse count for a display row (1 if not collapsed or unique).
+    pub fn get_collapse_count(&self, display_row: usize) -> usize {
+        if self.collapse_identical && display_row < self.collapse_groups.len() {
+            self.collapse_groups[display_row].1.len()
+        } else {
+            1
+        }
+    }
+
+    /// Get the maximum collapse count across all groups.
+    pub fn max_collapse_count(&self) -> usize {
+        if self.collapse_identical {
+            self.collapse_groups
+                .iter()
+                .map(|(_, g)| g.len())
+                .max()
+                .unwrap_or(1)
+        } else {
+            1
+        }
+    }
+
+    /// Toggle collapse identical sequences.
+    pub fn toggle_collapse_identical(&mut self) {
+        self.collapse_identical = !self.collapse_identical;
+        // Groups are pre-computed during load, just flip the flag
+
+        // Clamp cursor to visible range
+        if self.cursor_row >= self.visible_sequence_count() {
+            self.cursor_row = self.visible_sequence_count().saturating_sub(1);
+        }
+
+        let msg = if self.collapse_identical {
+            format!(
+                "Collapsed {} sequences into {} groups",
+                self.alignment.num_sequences(),
+                self.collapse_groups.len()
+            )
+        } else {
+            "Collapse disabled".to_string()
+        };
+        self.status_message = Some(msg);
+    }
+
+    // === Sequence type detection ===
+
+    /// Detect sequence type from alignment content.
+    pub fn detect_sequence_type(&mut self) {
+        self.sequence_type = crate::color::detect_sequence_type(&self.alignment, &self.gap_chars);
     }
 }

@@ -67,10 +67,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Load file if provided
-    if let Some(path) = args.file
-        && let Err(e) = app.load_file(&path)
-    {
-        app.set_status(format!("Error: {}", e));
+    if let Some(path) = args.file {
+        if let Err(e) = app.load_file(&path) {
+            app.set_status(format!("Error: {}", e));
+        } else {
+            // Auto-detect sequence type and precompute collapse groups
+            app.detect_sequence_type();
+            app.precompute_collapse_groups();
+        }
     }
 
     // Run main loop
@@ -110,6 +114,9 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
             app.show_row_numbers,
             app.split_mode,
             app.alignment.ss_cons().is_some(),
+            app.show_consensus,
+            app.show_conservation_bar,
+            app.max_collapse_count(),
             tree_display_width,
             app.alignment.width(),
         );

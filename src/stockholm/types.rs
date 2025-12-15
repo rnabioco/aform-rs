@@ -11,6 +11,16 @@ pub enum ShiftDirection {
     Right,
 }
 
+/// Type of sequences in the alignment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(clippy::upper_case_acronyms)]
+pub enum SequenceType {
+    #[default]
+    RNA,
+    DNA,
+    Protein,
+}
+
 /// A Stockholm format alignment.
 ///
 /// Sequences are wrapped in Rc for efficient copy-on-write cloning during undo/redo.

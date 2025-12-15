@@ -228,11 +228,15 @@ fn render_alignment_pane(
     let ruler_height = if app.show_ruler { RULER_HEIGHT } else { 0 };
     let has_ss_cons = app.alignment.ss_cons().is_some();
     let ss_cons_height: u16 = if has_ss_cons { 1 } else { 0 };
+    let consensus_height: u16 = if app.show_consensus { 1 } else { 0 };
+    let conservation_height: u16 = if app.show_conservation_bar { 1 } else { 0 };
 
-    // Calculate visible rows (inner height minus ruler and SS_cons)
+    // Calculate visible rows (inner height minus ruler and annotation bars)
     let visible_rows = (inner.height as usize)
         .saturating_sub(ruler_height as usize)
-        .saturating_sub(ss_cons_height as usize);
+        .saturating_sub(ss_cons_height as usize)
+        .saturating_sub(consensus_height as usize)
+        .saturating_sub(conservation_height as usize);
 
     // === Split horizontally: IDs | Alignment | Tree | Filler ===
     let h_constraints = if tree_display_width > 0 {
@@ -266,6 +270,13 @@ fn render_alignment_pane(
         None
     };
 
+    // Total annotation bar height
+    let annotation_height = ss_cons_height + consensus_height + conservation_height;
+
+    // Calculate actual sequence rows to display (may be less than visible_rows)
+    let actual_seq_rows =
+        (app.visible_sequence_count().saturating_sub(viewport_row)).min(visible_rows) as u16;
+
     // === Render IDs column (with vertical alignment to match sequences) ===
     render_ids_column(
         frame,
@@ -275,13 +286,20 @@ fn render_alignment_pane(
         visible_rows,
         &id_formatter,
         ruler_height,
-        ss_cons_height,
+        annotation_height,
+        actual_seq_rows,
     );
 
     // === Render separator line ===
-    render_separator(frame, h_chunks[1], ruler_height, ss_cons_height);
+    render_separator(
+        frame,
+        h_chunks[1],
+        ruler_height,
+        annotation_height,
+        actual_seq_rows,
+    );
 
-    // === Render alignment column (with ruler above, SS_cons below) ===
+    // === Render alignment column (with ruler above, annotation bars below) ===
     render_alignment_column(
         frame,
         app,
@@ -292,13 +310,21 @@ fn render_alignment_pane(
         seq_width,
         ruler_height,
         ss_cons_height,
+        consensus_height,
+        conservation_height,
         is_active,
     );
 
     // === Render tree column if present ===
     if let Some(tree_rect) = tree_area {
         // Render separator before tree
-        render_separator(frame, h_chunks[3], ruler_height, ss_cons_height);
+        render_separator(
+            frame,
+            h_chunks[3],
+            ruler_height,
+            annotation_height,
+            actual_seq_rows,
+        );
         render_tree_column(
             frame,
             app,
@@ -306,7 +332,8 @@ fn render_alignment_pane(
             viewport_row,
             visible_rows,
             ruler_height,
-            ss_cons_height,
+            annotation_height,
+            actual_seq_rows,
         );
     }
 }
@@ -321,22 +348,24 @@ fn render_ids_column(
     visible_rows: usize,
     id_formatter: &IdFormatter,
     ruler_height: u16,
-    ss_cons_height: u16,
+    annotation_height: u16,
+    actual_seq_rows: u16,
 ) {
-    // Split to match alignment layout (blank space for ruler/SS_cons rows)
+    // Split to match alignment layout (blank space for ruler/annotation bars)
     let v_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(ruler_height),
-            Constraint::Min(1),
-            Constraint::Length(ss_cons_height),
+            Constraint::Length(actual_seq_rows),
+            Constraint::Length(annotation_height),
+            Constraint::Min(0), // Filler
         ])
         .split(area);
 
     let ids_seq_area = v_chunks[1];
-    let ids_ss_cons_area = v_chunks[2];
+    let ids_annotation_area = v_chunks[2];
 
-    // Render sequence IDs
+    // Render sequence IDs (with collapse count if enabled)
     let mut lines = Vec::new();
     for display_row in viewport_row..(viewport_row + visible_rows).min(app.visible_sequence_count())
     {
@@ -349,14 +378,27 @@ fn render_ids_column(
             Style::reset().fg(Color::Cyan)
         };
 
-        let id_display = id_formatter.format(display_row, &seq.id);
+        // Show collapse count if enabled and group has more than 1 member
+        let collapse_count = app.get_collapse_count(display_row);
+        let id_display = if collapse_count > 1 {
+            format!(
+                "{} ({})",
+                id_formatter.format(display_row, &seq.id),
+                collapse_count
+            )
+        } else {
+            id_formatter.format(display_row, &seq.id)
+        };
         lines.push(Line::from(Span::styled(id_display, id_style)));
     }
 
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, ids_seq_area);
 
-    // Render SS_cons label if present
+    // Render annotation labels
+    let mut annotation_lines = Vec::new();
+
+    // SS_cons label
     if app.alignment.ss_cons().is_some() {
         let ss_label = format!(
             "{:>row_w$} {:id_w$}",
@@ -365,16 +407,56 @@ fn render_ids_column(
             row_w = id_formatter.row_width,
             id_w = id_formatter.id_width
         );
-        let label_line = Paragraph::new(Line::from(Span::styled(
+        annotation_lines.push(Line::from(Span::styled(
             ss_label,
             Style::reset().fg(Color::Yellow).bg(Color::Rgb(30, 30, 40)),
         )));
-        frame.render_widget(label_line, ids_ss_cons_area);
+    }
+
+    // Consensus label
+    if app.show_consensus {
+        let cons_label = format!(
+            "{:>row_w$} {:id_w$}",
+            "═",
+            "Consensus",
+            row_w = id_formatter.row_width,
+            id_w = id_formatter.id_width
+        );
+        annotation_lines.push(Line::from(Span::styled(
+            cons_label,
+            Style::reset().fg(Color::Cyan).bg(Color::Rgb(30, 40, 30)),
+        )));
+    }
+
+    // Conservation label
+    if app.show_conservation_bar {
+        let cons_label = format!(
+            "{:>row_w$} {:id_w$}",
+            "═",
+            "Conservation",
+            row_w = id_formatter.row_width,
+            id_w = id_formatter.id_width
+        );
+        annotation_lines.push(Line::from(Span::styled(
+            cons_label,
+            Style::reset().fg(Color::Magenta).bg(Color::Rgb(40, 30, 40)),
+        )));
+    }
+
+    if !annotation_lines.is_empty() {
+        let label_para = Paragraph::new(annotation_lines);
+        frame.render_widget(label_para, ids_annotation_area);
     }
 }
 
 /// Render a vertical separator line.
-fn render_separator(frame: &mut Frame, area: Rect, ruler_height: u16, ss_cons_height: u16) {
+fn render_separator(
+    frame: &mut Frame,
+    area: Rect,
+    ruler_height: u16,
+    annotation_height: u16,
+    actual_seq_rows: u16,
+) {
     let mut lines = Vec::new();
 
     // Blank space for ruler area
@@ -386,19 +468,15 @@ fn render_separator(frame: &mut Frame, area: Rect, ruler_height: u16, ss_cons_he
     }
 
     // Separator for sequence rows
-    let seq_rows = area
-        .height
-        .saturating_sub(ruler_height)
-        .saturating_sub(ss_cons_height);
-    for _ in 0..seq_rows {
+    for _ in 0..actual_seq_rows {
         lines.push(Line::from(Span::styled(
             "│",
             Style::reset().fg(Color::DarkGray),
         )));
     }
 
-    // Separator for SS_cons
-    for _ in 0..ss_cons_height {
+    // Separator for annotation bars
+    for _ in 0..annotation_height {
         lines.push(Line::from(Span::styled(
             "│",
             Style::reset().fg(Color::DarkGray),
@@ -409,7 +487,7 @@ fn render_separator(frame: &mut Frame, area: Rect, ruler_height: u16, ss_cons_he
     frame.render_widget(paragraph, area);
 }
 
-/// Render the alignment column (ruler + sequences + SS_cons).
+/// Render the alignment column (ruler + sequences + annotation bars).
 #[allow(clippy::too_many_arguments)]
 fn render_alignment_column(
     frame: &mut Frame,
@@ -421,21 +499,45 @@ fn render_alignment_column(
     seq_width: usize,
     ruler_height: u16,
     ss_cons_height: u16,
+    consensus_height: u16,
+    conservation_height: u16,
     is_active: bool,
 ) {
-    // Split alignment area vertically: ruler | sequences | SS_cons
+    // Total annotation bar height
+    let annotation_height = ss_cons_height + consensus_height + conservation_height;
+
+    // Calculate actual sequence rows to display (may be less than visible_rows)
+    let actual_seq_rows = (app.visible_sequence_count().saturating_sub(viewport_row)).min(visible_rows);
+
+    // Split alignment area vertically: ruler | sequences | annotations | filler
+    // Use Length for sequences so annotations follow immediately after
     let v_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(ruler_height),
-            Constraint::Min(1),
-            Constraint::Length(ss_cons_height),
+            Constraint::Length(actual_seq_rows as u16),
+            Constraint::Length(annotation_height),
+            Constraint::Min(0), // Filler takes remaining space
         ])
         .split(area);
 
     let ruler_area = v_chunks[0];
     let seq_area = v_chunks[1];
-    let ss_cons_area = v_chunks[2];
+    let annotation_area = v_chunks[2];
+
+    // Further split annotation area
+    let annotation_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(ss_cons_height),
+            Constraint::Length(consensus_height),
+            Constraint::Length(conservation_height),
+        ])
+        .split(annotation_area);
+
+    let ss_cons_area = annotation_chunks[0];
+    let consensus_area = annotation_chunks[1];
+    let conservation_area = annotation_chunks[2];
 
     // Render ruler (no ID padding - ruler is only over alignment)
     if app.show_ruler {
@@ -469,6 +571,7 @@ fn render_alignment_column(
                 &app.structure_cache,
                 &app.gap_chars,
                 app.reference_seq,
+                app.sequence_type,
             ) {
                 style = style.bg(color).fg(Color::Black);
             }
@@ -508,7 +611,7 @@ fn render_alignment_column(
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, seq_area);
 
-    // Render SS_cons (no ID padding - only over alignment)
+    // Render SS_cons
     if let Some(ss) = app.alignment.ss_cons() {
         let mut spans = Vec::new();
 
@@ -540,9 +643,91 @@ fn render_alignment_column(
         let ss_line = Paragraph::new(Line::from(spans));
         frame.render_widget(ss_line, ss_cons_area);
     }
+
+    // Render consensus bar
+    if app.show_consensus {
+        render_consensus_bar(frame, app, consensus_area, viewport_col, seq_width, is_active);
+    }
+
+    // Render conservation bar
+    if app.show_conservation_bar {
+        render_conservation_bar(
+            frame,
+            app,
+            conservation_area,
+            viewport_col,
+            seq_width,
+            is_active,
+        );
+    }
+}
+
+/// Render the consensus bar (showing the most common character at each position).
+fn render_consensus_bar(
+    frame: &mut Frame,
+    app: &App,
+    area: Rect,
+    viewport_col: usize,
+    seq_width: usize,
+    is_active: bool,
+) {
+    use crate::color::get_consensus_char_with_case;
+
+    let mut spans = Vec::new();
+    let alignment_width = app.alignment.width();
+
+    for col in viewport_col..(viewport_col + seq_width).min(alignment_width) {
+        let ch =
+            get_consensus_char_with_case(col, &app.alignment, &app.gap_chars, app.consensus_threshold);
+        let is_cursor_col = is_active && col == app.cursor_col;
+
+        let mut style = Style::reset().fg(Color::Cyan).bg(Color::Rgb(30, 40, 30));
+
+        if is_cursor_col {
+            style = style.add_modifier(Modifier::UNDERLINED);
+        }
+
+        spans.push(Span::styled(ch.to_string(), style));
+    }
+
+    let line = Paragraph::new(Line::from(spans));
+    frame.render_widget(line, area);
+}
+
+/// Render the conservation bar (showing conservation level with block characters).
+fn render_conservation_bar(
+    frame: &mut Frame,
+    app: &App,
+    area: Rect,
+    viewport_col: usize,
+    seq_width: usize,
+    is_active: bool,
+) {
+    use crate::color::{calculate_conservation, conservation_to_block};
+
+    let mut spans = Vec::new();
+    let alignment_width = app.alignment.width();
+
+    for col in viewport_col..(viewport_col + seq_width).min(alignment_width) {
+        let conservation = calculate_conservation(col, &app.alignment, &app.gap_chars);
+        let (ch, color) = conservation_to_block(conservation);
+        let is_cursor_col = is_active && col == app.cursor_col;
+
+        let mut style = Style::reset().fg(color).bg(Color::Rgb(40, 30, 40));
+
+        if is_cursor_col {
+            style = style.add_modifier(Modifier::UNDERLINED);
+        }
+
+        spans.push(Span::styled(ch.to_string(), style));
+    }
+
+    let line = Paragraph::new(Line::from(spans));
+    frame.render_widget(line, area);
 }
 
 /// Render the tree/dendrogram column.
+#[allow(clippy::too_many_arguments)]
 fn render_tree_column(
     frame: &mut Frame,
     app: &App,
@@ -550,37 +735,50 @@ fn render_tree_column(
     viewport_row: usize,
     visible_rows: usize,
     ruler_height: u16,
-    ss_cons_height: u16,
+    annotation_height: u16,
+    actual_seq_rows: u16,
 ) {
-    // Split to match alignment layout (blank space for ruler/SS_cons rows)
+    // Split to match alignment layout (blank space for ruler/annotation rows)
     let v_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(ruler_height),
-            Constraint::Min(1),
-            Constraint::Length(ss_cons_height),
+            Constraint::Length(actual_seq_rows),
+            Constraint::Length(annotation_height),
+            Constraint::Min(0), // Filler
         ])
         .split(area);
 
     let tree_seq_area = v_chunks[1];
 
     // Render tree lines
+    // Note: When collapse is enabled, tree lines may not align properly
+    // since the tree was computed on original sequences, not collapsed groups.
+    // In that case, we skip tree rendering.
     let mut lines = Vec::new();
     if let Some(ref tree_lines) = app.cluster_tree {
-        for display_row in
-            viewport_row..(viewport_row + visible_rows).min(app.visible_sequence_count())
-        {
-            if let Some(tree_str) = tree_lines.get(display_row) {
-                let tree_color = match app.terminal_theme {
-                    TerminalTheme::Dark => Color::White,
-                    TerminalTheme::Light => Color::Black,
-                };
-                lines.push(Line::from(Span::styled(
-                    tree_str.clone(),
-                    Style::reset().fg(tree_color),
-                )));
-            } else {
+        if app.collapse_identical {
+            // Tree doesn't make sense with collapse - show empty
+            for _ in 0..actual_seq_rows {
                 lines.push(Line::from(""));
+            }
+        } else {
+            for display_row in
+                viewport_row..(viewport_row + visible_rows).min(app.visible_sequence_count())
+            {
+                // Tree lines are already in display order (clustered), use display_row directly
+                if let Some(tree_str) = tree_lines.get(display_row) {
+                    let tree_color = match app.terminal_theme {
+                        TerminalTheme::Dark => Color::White,
+                        TerminalTheme::Light => Color::Black,
+                    };
+                    lines.push(Line::from(Span::styled(
+                        tree_str.clone(),
+                        Style::reset().fg(tree_color),
+                    )));
+                } else {
+                    lines.push(Line::from(""));
+                }
             }
         }
     }
@@ -755,12 +953,19 @@ pub fn visible_dimensions(
     show_row_numbers: bool,
     split_mode: Option<SplitMode>,
     has_ss_cons: bool,
+    show_consensus: bool,
+    show_conservation_bar: bool,
+    max_collapse_count: usize,
     tree_display_width: usize,
     alignment_width: usize,
 ) -> (usize, usize) {
+    let _ = max_collapse_count; // Reserved for future ID column width adjustment
     let id_formatter = IdFormatter::new(num_sequences, max_id_len.max(10), show_row_numbers);
     let ruler_height = if show_ruler { RULER_HEIGHT } else { 0 };
     let ss_cons_height: u16 = if has_ss_cons { 1 } else { 0 };
+    let consensus_height: u16 = if show_consensus { 1 } else { 0 };
+    let conservation_height: u16 = if show_conservation_bar { 1 } else { 0 };
+    let annotation_height = ss_cons_height + consensus_height + conservation_height;
 
     // Calculate the alignment area (total - status - command)
     let alignment_area_height = area.height.saturating_sub(2); // status + command
@@ -779,9 +984,9 @@ pub fn visible_dimensions(
         }
     };
 
-    // Subtract borders (2), ruler height, SS_cons height, and tree width
+    // Subtract borders (2), ruler height, annotation bar heights, and tree width
     // Cap at alignment width (no excess space beyond alignment)
-    let inner_height = pane_height.saturating_sub(2 + ruler_height + ss_cons_height) as usize;
+    let inner_height = pane_height.saturating_sub(2 + ruler_height + annotation_height) as usize;
     let inner_width = (pane_width as usize)
         .saturating_sub(id_formatter.width() + 2)
         .saturating_sub(tree_display_width)
@@ -979,9 +1184,11 @@ fn render_help(frame: &mut Frame) {
         Line::from("  :w          Save file"),
         Line::from("  :q          Quit (:q! to force)"),
         Line::from("  :wq         Save and quit"),
-        Line::from("  :color X    Set color (ss/base/cons/off)"),
-        Line::from("  :ruler      Toggle position ruler"),
-        Line::from("  :rownum     Toggle row numbers"),
+        Line::from("  :color X    Set color (ss/base/protein/cons)"),
+        Line::from("  :type X     Set seq type (rna/dna/protein/auto)"),
+        Line::from("  :collapse   Toggle collapse identical seqs"),
+        Line::from("  :consensus  Toggle consensus bar"),
+        Line::from("  :conserv..  Toggle conservation bar"),
         Line::from("  :cluster    Cluster sequences by similarity"),
         Line::from("  :uncluster  Restore original order"),
         Line::from("  :tree       Toggle dendrogram tree"),

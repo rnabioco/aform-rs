@@ -3,7 +3,7 @@
 use ratatui::style::Color;
 
 use crate::app::ColorScheme;
-use crate::stockholm::Alignment;
+use crate::stockholm::{Alignment, SequenceType};
 use crate::structure::{CompensatoryChange, StructureCache, analyze_compensatory};
 
 /// Colors for helix highlighting (cycling through these).
@@ -40,6 +40,61 @@ pub const DNA_BASE_COLORS: [(char, Color); 2] = [
     ('t', Color::Rgb(213, 94, 0)),
 ];
 
+/// Amino acid colors based on chemical properties.
+/// Groups:
+/// - Hydrophobic (nonpolar): A, I, L, M, F, W, V - orange/brown
+/// - Polar uncharged: S, T, N, Q - green
+/// - Charged positive: K, R, H - blue
+/// - Charged negative: D, E - red
+/// - Special: C (yellow), G (magenta), P (pink), Y (cyan)
+pub const AMINO_ACID_COLORS: [(char, Color); 40] = [
+    // Hydrophobic (nonpolar) - orange/brown
+    ('A', Color::Rgb(230, 159, 0)),  // Alanine - orange
+    ('a', Color::Rgb(230, 159, 0)),
+    ('I', Color::Rgb(204, 121, 0)),  // Isoleucine - darker orange
+    ('i', Color::Rgb(204, 121, 0)),
+    ('L', Color::Rgb(204, 121, 0)),  // Leucine - darker orange
+    ('l', Color::Rgb(204, 121, 0)),
+    ('M', Color::Rgb(230, 159, 0)),  // Methionine - orange
+    ('m', Color::Rgb(230, 159, 0)),
+    ('F', Color::Rgb(166, 86, 40)),  // Phenylalanine - brown
+    ('f', Color::Rgb(166, 86, 40)),
+    ('W', Color::Rgb(166, 86, 40)),  // Tryptophan - brown
+    ('w', Color::Rgb(166, 86, 40)),
+    ('V', Color::Rgb(204, 121, 0)),  // Valine - darker orange
+    ('v', Color::Rgb(204, 121, 0)),
+    // Polar uncharged - green
+    ('S', Color::Rgb(0, 158, 115)),  // Serine - green
+    ('s', Color::Rgb(0, 158, 115)),
+    ('T', Color::Rgb(0, 158, 115)),  // Threonine - green (note: conflicts with DNA T)
+    ('t', Color::Rgb(0, 158, 115)),
+    ('N', Color::Rgb(86, 180, 133)), // Asparagine - light green
+    ('n', Color::Rgb(86, 180, 133)),
+    ('Q', Color::Rgb(86, 180, 133)), // Glutamine - light green
+    ('q', Color::Rgb(86, 180, 133)),
+    // Charged positive - blue
+    ('K', Color::Rgb(0, 114, 178)),  // Lysine - blue
+    ('k', Color::Rgb(0, 114, 178)),
+    ('R', Color::Rgb(0, 114, 178)),  // Arginine - blue
+    ('r', Color::Rgb(0, 114, 178)),
+    ('H', Color::Rgb(86, 180, 233)), // Histidine - light blue
+    ('h', Color::Rgb(86, 180, 233)),
+    // Charged negative - red
+    ('D', Color::Rgb(213, 94, 0)),   // Aspartate - red-orange
+    ('d', Color::Rgb(213, 94, 0)),
+    ('E', Color::Rgb(204, 51, 17)),  // Glutamate - red
+    ('e', Color::Rgb(204, 51, 17)),
+    // Special amino acids - distinct colors
+    ('C', Color::Rgb(240, 228, 66)), // Cysteine - yellow
+    ('c', Color::Rgb(240, 228, 66)),
+    ('G', Color::Rgb(204, 121, 167)), // Glycine - pink/magenta
+    ('g', Color::Rgb(204, 121, 167)),
+    ('P', Color::Rgb(255, 182, 193)), // Proline - light pink
+    ('p', Color::Rgb(255, 182, 193)),
+    ('Y', Color::Rgb(0, 191, 196)),  // Tyrosine - cyan
+    ('y', Color::Rgb(0, 191, 196)),
+];
+
 /// Conservation thresholds and colors.
 pub const CONSERVATION_HIGH: f64 = 0.8;
 pub const CONSERVATION_MED: f64 = 0.6;
@@ -67,11 +122,12 @@ pub fn get_color(
     cache: &StructureCache,
     gap_chars: &[char],
     reference_seq: usize,
+    sequence_type: SequenceType,
 ) -> Option<Color> {
     match scheme {
         ColorScheme::None => None,
         ColorScheme::Structure => get_structure_color(col, cache),
-        ColorScheme::Base => get_base_color(ch, gap_chars),
+        ColorScheme::Base => get_base_color(ch, gap_chars, sequence_type),
         ColorScheme::Conservation => get_conservation_color(col, alignment, gap_chars),
         ColorScheme::Compensatory => {
             get_compensatory_color(col, row, alignment, cache, gap_chars, reference_seq)
@@ -89,25 +145,52 @@ fn get_structure_color(col: usize, cache: &StructureCache) -> Option<Color> {
 /// Background color for gap characters in base coloring mode.
 const BASE_GAP_COLOR: Color = Color::Rgb(40, 40, 40); // dark gray
 
-/// Get color based on base identity.
-fn get_base_color(ch: char, gap_chars: &[char]) -> Option<Color> {
+/// Get color based on base/amino acid identity.
+fn get_base_color(ch: char, gap_chars: &[char], sequence_type: SequenceType) -> Option<Color> {
     // Check if gap character - use dark gray background
     if gap_chars.contains(&ch) {
         return Some(BASE_GAP_COLOR);
     }
-    // Check RNA bases
-    for (base, color) in BASE_COLORS {
-        if ch == base {
-            return Some(color);
+
+    match sequence_type {
+        SequenceType::Protein => {
+            // Check amino acid colors
+            for (aa, color) in AMINO_ACID_COLORS {
+                if ch == aa {
+                    return Some(color);
+                }
+            }
+            Some(BASE_GAP_COLOR)
+        }
+        SequenceType::DNA => {
+            // Check DNA bases first, then RNA
+            for (base, color) in DNA_BASE_COLORS {
+                if ch == base {
+                    return Some(color);
+                }
+            }
+            for (base, color) in BASE_COLORS {
+                if ch == base {
+                    return Some(color);
+                }
+            }
+            Some(BASE_GAP_COLOR)
+        }
+        SequenceType::RNA => {
+            // Check RNA bases first, then DNA
+            for (base, color) in BASE_COLORS {
+                if ch == base {
+                    return Some(color);
+                }
+            }
+            for (base, color) in DNA_BASE_COLORS {
+                if ch == base {
+                    return Some(color);
+                }
+            }
+            Some(BASE_GAP_COLOR)
         }
     }
-    // Check DNA bases
-    for (base, color) in DNA_BASE_COLORS {
-        if ch == base {
-            return Some(color);
-        }
-    }
-    Some(BASE_GAP_COLOR) // Unknown chars also get explicit background
 }
 
 /// Get color based on conservation at a column.
@@ -126,7 +209,7 @@ fn get_conservation_color(col: usize, alignment: &Alignment, gap_chars: &[char])
 }
 
 /// Calculate conservation at a column (0.0 to 1.0).
-fn calculate_conservation(col: usize, alignment: &Alignment, gap_chars: &[char]) -> f64 {
+pub fn calculate_conservation(col: usize, alignment: &Alignment, gap_chars: &[char]) -> f64 {
     if alignment.sequences.is_empty() {
         return 0.0;
     }
@@ -184,7 +267,6 @@ fn get_compensatory_color(
 }
 
 /// Get consensus character for a column.
-#[allow(dead_code)] // API utility for future consensus display
 pub fn get_consensus_char(col: usize, alignment: &Alignment, gap_chars: &[char]) -> char {
     if alignment.sequences.is_empty() {
         return ' ';
@@ -201,11 +283,98 @@ pub fn get_consensus_char(col: usize, alignment: &Alignment, gap_chars: &[char])
         }
     }
 
+    // Use max_by to break ties deterministically by character
     counts
         .into_iter()
-        .max_by_key(|(_, count)| *count)
+        .max_by(|(ch_a, count_a), (ch_b, count_b)| {
+            count_a.cmp(count_b).then_with(|| ch_a.cmp(ch_b))
+        })
         .map(|(ch, _)| ch)
         .unwrap_or('.')
+}
+
+/// Get consensus character with case indicating conservation level.
+/// Uppercase if conservation >= threshold, lowercase otherwise.
+pub fn get_consensus_char_with_case(
+    col: usize,
+    alignment: &Alignment,
+    gap_chars: &[char],
+    threshold: f64,
+) -> char {
+    let conservation = calculate_conservation(col, alignment, gap_chars);
+    let ch = get_consensus_char(col, alignment, gap_chars);
+
+    if conservation >= threshold {
+        ch.to_ascii_uppercase()
+    } else {
+        ch.to_ascii_lowercase()
+    }
+}
+
+/// Convert conservation score (0.0-1.0) to a block character and color.
+/// Uses Unicode block characters to show conservation level visually.
+pub fn conservation_to_block(conservation: f64) -> (char, Color) {
+    if conservation >= 0.9 {
+        ('\u{2588}', Color::Rgb(0, 255, 255)) // Full block - cyan (█)
+    } else if conservation >= 0.75 {
+        ('\u{2593}', Color::Rgb(135, 206, 235)) // Dark shade - skyblue (▓)
+    } else if conservation >= 0.5 {
+        ('\u{2592}', Color::Rgb(169, 169, 169)) // Medium shade - gray (▒)
+    } else if conservation >= 0.25 {
+        ('\u{2591}', Color::Rgb(105, 105, 105)) // Light shade - dimgray (░)
+    } else {
+        (' ', Color::DarkGray) // No block for very low conservation
+    }
+}
+
+/// Detect sequence type from alignment content.
+/// Checks for protein-specific amino acids, then distinguishes RNA (U) from DNA (T).
+pub fn detect_sequence_type(alignment: &Alignment, gap_chars: &[char]) -> SequenceType {
+    // Amino acids only found in proteins (not in nucleotides)
+    const PROTEIN_ONLY: &[char] = &[
+        'E', 'e', 'F', 'f', 'I', 'i', 'L', 'l', 'P', 'p', 'Q', 'q', 'H', 'h', 'K', 'k', 'M', 'm',
+        'R', 'r', 'S', 's', 'V', 'v', 'W', 'w', 'Y', 'y', 'D', 'd',
+    ];
+
+    let mut has_u = false;
+    let mut has_t = false;
+    let mut total_chars = 0;
+
+    for seq in &alignment.sequences {
+        for ch in seq.chars() {
+            if gap_chars.contains(ch) {
+                continue;
+            }
+            total_chars += 1;
+
+            // Check for protein-specific characters
+            if PROTEIN_ONLY.contains(ch) {
+                return SequenceType::Protein;
+            }
+
+            let upper = ch.to_ascii_uppercase();
+            if upper == 'U' {
+                has_u = true;
+            }
+            if upper == 'T' {
+                has_t = true;
+            }
+        }
+    }
+
+    if total_chars == 0 {
+        return SequenceType::RNA; // Default
+    }
+
+    // RNA has U, DNA has T
+    if has_u && !has_t {
+        SequenceType::RNA
+    } else if has_t && !has_u {
+        SequenceType::DNA
+    } else {
+        // Default to RNA for ambiguous cases (both or neither)
+        SequenceType::RNA
+    }
 }
 
 #[cfg(test)]
@@ -217,13 +386,19 @@ mod tests {
     #[test]
     fn test_base_colors() {
         let gap_chars = ['.', '-'];
-        assert!(get_base_color('A', &gap_chars).is_some());
-        assert!(get_base_color('C', &gap_chars).is_some());
-        assert!(get_base_color('G', &gap_chars).is_some());
-        assert!(get_base_color('U', &gap_chars).is_some());
+        // RNA bases
+        assert!(get_base_color('A', &gap_chars, SequenceType::RNA).is_some());
+        assert!(get_base_color('C', &gap_chars, SequenceType::RNA).is_some());
+        assert!(get_base_color('G', &gap_chars, SequenceType::RNA).is_some());
+        assert!(get_base_color('U', &gap_chars, SequenceType::RNA).is_some());
+        // DNA bases
+        assert!(get_base_color('T', &gap_chars, SequenceType::DNA).is_some());
+        // Protein amino acids
+        assert!(get_base_color('M', &gap_chars, SequenceType::Protein).is_some());
+        assert!(get_base_color('W', &gap_chars, SequenceType::Protein).is_some());
         // Gaps return dark gray background
         assert_eq!(
-            get_base_color('.', &gap_chars),
+            get_base_color('.', &gap_chars, SequenceType::RNA),
             Some(Color::Rgb(40, 40, 40))
         );
     }

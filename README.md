@@ -1,14 +1,17 @@
 # aform-rs
 
-A terminal-based Stockholm alignment editor for RNA sequences, inspired by [Emacs ralee mode](https://github.com/samgriffithsjones/ralee).
+A terminal-based Stockholm alignment editor for RNA, DNA, and protein sequences, inspired by [Emacs ralee mode](https://github.com/samgriffithsjones/ralee).
 
 ## Features
 
 - **Stockholm format support**: Parse and write Stockholm alignment files with full metadata support (#=GF, #=GS, #=GC, #=GR annotations), including [R2R](https://sourceforge.net/projects/weinberg-r2r/) extensions (R2R_LABEL, multiple SS_cons variants)
 - **Vim-style keybindings**: Modal editing with normal, insert, and command modes
+- **RNA/DNA/Protein support**: Auto-detects sequence type with appropriate coloring (nucleotide or amino acid colors)
 - **Secondary structure visualization**: Color alignments by helix, base identity, or conservation
 - **Structure-aware navigation**: Jump to paired bases in the secondary structure
 - **Alignment editing**: Insert/delete gaps, shift sequences, undo/redo
+- **Annotation bars**: Optional consensus sequence and conservation level visualization
+- **Collapse identical sequences**: Group and collapse identical sequences to reduce clutter
 - **ViennaRNA integration**: Optional folding with RNAfold and RNAalifold (requires ViennaRNA package)
 - **Sequence clustering**: Cluster sequences by similarity (UPGMA) with dendrogram visualization
 
@@ -82,20 +85,30 @@ Options:
 | `:q!` | Force quit |
 | `:wq` | Save and quit |
 | `:w <path>` | Save to new file |
-| `:color <scheme>` | Set color scheme (none/ss/base/cons) |
+| `:color <scheme>` | Set color scheme (see below) |
 | `:set gap=<char>` | Set gap character |
 | `:fold` | Fold current sequence (requires RNAfold) |
 | `:alifold` | Fold alignment (requires RNAalifold) |
 | `:cluster` | Cluster sequences by similarity |
 | `:uncluster` | Restore original sequence order |
 | `:tree` | Toggle dendrogram tree display |
+| `:collapse` | Toggle collapse of identical sequences |
+| `:consensus` | Toggle consensus sequence bar |
+| `:conservation` | Toggle conservation level bar |
+| `:type <type>` | Set sequence type (rna/dna/protein/auto) |
 
 ## Color Schemes
 
-- **none**: No coloring
-- **structure** (ss): Color by secondary structure helix
-- **base** (nt): Color by nucleotide (A=blue, C=green, G=pink, U=yellow)
-- **conservation** (cons): Color by column conservation
+Set with `:color <scheme>`:
+
+- **none** / **off**: No coloring
+- **structure** / **ss**: Color by secondary structure helix
+- **base** / **nt**: Color by nucleotide (A=blue, C=green, G=pink, U=yellow)
+- **protein** / **aa** / **residue**: Amino acid coloring (Taylor scheme)
+- **conservation** / **cons**: Color by column conservation
+- **compensatory** / **comp**: Highlight compensatory mutations
+
+Note: `base`, `protein`, `aa`, and `residue` all use the same color scheme, which automatically adapts to the detected sequence type (nucleotide or amino acid colors).
 
 ## Stockholm Format
 
