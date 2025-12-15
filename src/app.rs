@@ -2,7 +2,6 @@
 
 use std::path::{Path, PathBuf};
 
-use ratatui_explorer::FileExplorer;
 use strum::AsRefStr;
 
 use crate::editor::History;
@@ -72,6 +71,18 @@ impl SearchState {
     }
 }
 
+/// State for tab completion in command mode.
+#[derive(Debug, Clone, Default)]
+pub struct CompletionState {
+    /// Available completion candidates.
+    pub candidates: Vec<String>,
+    /// Current index in candidates (for cycling).
+    pub index: usize,
+    /// Original prefix before completion started (for potential reset).
+    #[allow(dead_code)]
+    pub prefix: String,
+}
+
 /// Editor mode (vim-style).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, AsRefStr)]
 #[strum(serialize_all = "UPPERCASE")]
@@ -81,8 +92,6 @@ pub enum Mode {
     Insert,
     Command,
     Search,
-    /// File browser mode for opening files.
-    Browse,
     /// Visual block selection mode.
     Visual,
 }
@@ -166,6 +175,8 @@ pub struct App {
     pub show_ruler: bool,
     /// Show row numbers.
     pub show_row_numbers: bool,
+    /// Show short IDs (strip coordinate suffix like /10000-20000).
+    pub show_short_ids: bool,
     /// Reference sequence index for compensatory coloring.
     pub reference_seq: usize,
     /// Split screen mode (None = single pane).
@@ -196,6 +207,8 @@ pub struct App {
     pub(crate) command_history: InputHistory,
     /// Search state (pattern, matches, history).
     pub(crate) search: SearchState,
+    /// Tab completion state for command mode.
+    pub(crate) completion: Option<CompletionState>,
     /// Status message.
     pub(crate) status_message: Option<String>,
     /// Undo/redo history.
@@ -206,10 +219,6 @@ pub struct App {
     pub(crate) secondary_viewport_row: usize,
     /// Secondary pane viewport column.
     pub(crate) secondary_viewport_col: usize,
-
-    // === File browser state ===
-    /// File explorer for browsing files.
-    pub(crate) file_explorer: Option<FileExplorer>,
 
     // === Visual selection state ===
     /// Selection anchor point (row, col) - set when entering visual mode.
@@ -265,6 +274,7 @@ impl Default for App {
             command_buffer: String::new(),
             command_history: InputHistory::new(),
             search: SearchState::new(),
+            completion: None,
             status_message: None,
             gap_char: '.',
             gap_chars: vec!['.', '-', '_', '~', ':'],
@@ -275,13 +285,13 @@ impl Default for App {
             show_help: false,
             show_ruler: true,
             show_row_numbers: true,
+            show_short_ids: false,
             reference_seq: 0,
             count_buffer: String::new(),
             split_mode: None,
             active_pane: ActivePane::Primary,
             secondary_viewport_row: 0,
             secondary_viewport_col: 0,
-            file_explorer: None,
             selection_anchor: None,
             clipboard: None,
             cluster_order: None,
@@ -533,25 +543,6 @@ impl App {
     pub fn enter_search_mode(&mut self) {
         self.mode = Mode::Search;
         self.search.pattern.clear();
-    }
-
-    /// Enter file browser mode.
-    pub fn enter_browse_mode(&mut self) {
-        match FileExplorer::new() {
-            Ok(explorer) => {
-                self.file_explorer = Some(explorer);
-                self.mode = Mode::Browse;
-            }
-            Err(e) => {
-                self.set_status(format!("Failed to open file browser: {e}"));
-            }
-        }
-    }
-
-    /// Exit file browser mode without selecting a file.
-    pub fn exit_browse_mode(&mut self) {
-        self.file_explorer = None;
-        self.mode = Mode::Normal;
     }
 
     /// Enter visual selection mode.
@@ -938,7 +929,7 @@ impl App {
                 true
             }
             ["e" | "edit"] => {
-                self.enter_browse_mode();
+                self.set_status("Usage: :e <path> (Tab to complete)");
                 true
             }
             ["e" | "edit", path] => {
@@ -979,6 +970,14 @@ impl App {
                 self.set_status(format!(
                     "Row numbers: {}",
                     if self.show_row_numbers { "on" } else { "off" }
+                ));
+                true
+            }
+            ["shortid"] => {
+                self.show_short_ids = !self.show_short_ids;
+                self.set_status(format!(
+                    "Short IDs: {}",
+                    if self.show_short_ids { "on" } else { "off" }
                 ));
                 true
             }

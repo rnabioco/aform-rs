@@ -1,6 +1,6 @@
 //! Vim-style input handling.
 
-use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::app::{App, Mode};
 
@@ -95,7 +95,6 @@ pub fn handle_key(app: &mut App, key: KeyEvent, page_size: usize) {
         Mode::Insert => handle_insert_mode(app, key),
         Mode::Command => handle_command_mode(app, key),
         Mode::Search => handle_search_mode(app, key),
-        Mode::Browse => handle_browse_mode(app, key),
         Mode::Visual => handle_visual_mode(app, key, page_size),
     }
 }
@@ -336,12 +335,15 @@ fn handle_insert_mode(app: &mut App, key: KeyEvent) {
 fn handle_command_mode(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => {
+            app.completion = None;
             app.enter_normal_mode();
         }
         KeyCode::Enter => {
+            app.completion = None;
             app.execute_command();
         }
         KeyCode::Backspace => {
+            app.completion = None;
             app.command_buffer.pop();
         }
         KeyCode::Up => {
@@ -350,11 +352,121 @@ fn handle_command_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Down => {
             app.command_history_next();
         }
+        KeyCode::Tab => {
+            handle_tab_completion(app);
+        }
         KeyCode::Char(c) => {
+            app.completion = None;
             app.command_buffer.push(c);
         }
         _ => {}
     }
+}
+
+/// Handle tab completion for file paths in command mode.
+fn handle_tab_completion(app: &mut App) {
+    use crate::app::CompletionState;
+
+    // Check if we're completing a file path command
+    let buffer = app.command_buffer.clone();
+    let (cmd, partial_path) = if let Some(rest) = buffer.strip_prefix("e ") {
+        ("e ", rest)
+    } else if let Some(rest) = buffer.strip_prefix("edit ") {
+        ("edit ", rest)
+    } else if let Some(rest) = buffer.strip_prefix("w ") {
+        ("w ", rest)
+    } else if let Some(rest) = buffer.strip_prefix("write ") {
+        ("write ", rest)
+    } else {
+        return; // Not a file command
+    };
+
+    // If we have existing completion state, cycle through candidates
+    if let Some(ref mut state) = app.completion
+        && !state.candidates.is_empty()
+    {
+        state.index = (state.index + 1) % state.candidates.len();
+        app.command_buffer = format!("{}{}", cmd, state.candidates[state.index]);
+        return;
+    }
+
+    // Get completions
+    let candidates = complete_path(partial_path);
+
+    if candidates.is_empty() {
+        app.set_status("No matches");
+        return;
+    }
+
+    if candidates.len() == 1 {
+        // Single match - complete it
+        app.command_buffer = format!("{}{}", cmd, candidates[0]);
+        app.completion = None;
+    } else {
+        // Multiple matches - start cycling
+        app.command_buffer = format!("{}{}", cmd, candidates[0]);
+        app.completion = Some(CompletionState {
+            candidates,
+            index: 0,
+            prefix: partial_path.to_string(),
+        });
+        // Show available options in status
+        if let Some(ref state) = app.completion {
+            let preview: Vec<&str> = state.candidates.iter().take(5).map(|s| s.as_str()).collect();
+            let msg = if state.candidates.len() > 5 {
+                format!("{} ... ({} more)", preview.join("  "), state.candidates.len() - 5)
+            } else {
+                preview.join("  ")
+            };
+            app.set_status(msg);
+        }
+    }
+}
+
+/// Complete a partial file path, returning sorted candidates.
+fn complete_path(partial: &str) -> Vec<String> {
+    use std::path::Path;
+
+    let path = Path::new(partial);
+
+    // Determine directory to search and prefix to match
+    let (dir, prefix) = if partial.is_empty() {
+        (Path::new("."), "")
+    } else if partial.ends_with('/') || partial.ends_with(std::path::MAIN_SEPARATOR) {
+        (path, "")
+    } else {
+        // parent() returns Some("") for bare filenames, which is not a valid dir
+        let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+        let file_prefix = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        (parent, file_prefix)
+    };
+
+    let mut candidates: Vec<String> = std::fs::read_dir(dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.file_name()
+                .to_str()
+                .is_some_and(|name| name.starts_with(prefix) && !name.starts_with('.'))
+        })
+        .map(|e| {
+            let mut result = if dir == Path::new(".") {
+                e.file_name().to_string_lossy().to_string()
+            } else {
+                dir.join(e.file_name()).display().to_string()
+            };
+            // Add trailing slash for directories
+            if e.file_type().is_ok_and(|t| t.is_dir()) {
+                result.push('/');
+            }
+            result
+        })
+        .collect();
+
+    candidates.sort();
+    candidates
 }
 
 /// Handle keys in search mode.
@@ -383,39 +495,6 @@ fn handle_search_mode(app: &mut App, key: KeyEvent) {
             app.search.pattern.push(c);
         }
         _ => {}
-    }
-}
-
-/// Handle keys in file browser mode.
-fn handle_browse_mode(app: &mut App, key: KeyEvent) {
-    // Handle Escape to exit browser
-    if key.code == KeyCode::Esc {
-        app.exit_browse_mode();
-        return;
-    }
-
-    // Handle Enter to select file
-    if key.code == KeyCode::Enter
-        && let Some(ref explorer) = app.file_explorer
-    {
-        let current = explorer.current();
-        if current.is_file() {
-            let path = current.path().to_path_buf();
-            app.exit_browse_mode();
-            if let Err(e) = app.load_file(&path) {
-                app.set_status(e);
-            }
-            return;
-        }
-    }
-
-    // Pass other events to the file explorer
-    // Note: Errors here are typically directory access issues that the explorer handles internally
-    if let Some(ref mut explorer) = app.file_explorer {
-        let event = Event::Key(key);
-        if explorer.handle(&event).is_err() {
-            // Explorer handles its own error display; we just continue
-        }
     }
 }
 

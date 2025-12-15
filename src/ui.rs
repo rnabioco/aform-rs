@@ -23,14 +23,6 @@ pub fn render(frame: &mut Frame, app: &App) {
         ])
         .split(frame.area());
 
-    // If in browse mode, render file explorer
-    if app.mode == Mode::Browse {
-        render_file_explorer(frame, app, chunks[0]);
-        render_status_bar(frame, app, chunks[1]);
-        render_command_line(frame, app, chunks[2]);
-        return;
-    }
-
     // Handle split mode
     match app.split_mode {
         None => {
@@ -116,6 +108,7 @@ struct IdFormatter {
     row_width: usize,
     id_width: usize,
     show_row_numbers: bool,
+    show_short_ids: bool,
     collapse_width: usize,
 }
 
@@ -142,6 +135,7 @@ impl IdFormatter {
         max_id_len: usize,
         show_row_numbers: bool,
         max_collapse_count: usize,
+        show_short_ids: bool,
     ) -> Self {
         // Width for collapse count suffix: " (N)" where N is the max count
         let collapse_width = if max_collapse_count > 1 {
@@ -159,6 +153,7 @@ impl IdFormatter {
             },
             id_width: max_id_len,
             show_row_numbers,
+            show_short_ids,
             collapse_width,
         }
     }
@@ -177,16 +172,22 @@ impl IdFormatter {
 
     /// Format a row number and ID.
     fn format(&self, row: usize, id: &str) -> String {
+        use crate::stockholm::short_id;
+        let display_id = if self.show_short_ids {
+            short_id(id)
+        } else {
+            id
+        };
         if self.show_row_numbers {
             format!(
                 "{:>row_w$} {:id_w$} ",
                 row + 1,
-                id,
+                display_id,
                 row_w = self.row_width,
                 id_w = self.id_width
             )
         } else {
-            format!("{:id_w$} ", id, id_w = self.id_width)
+            format!("{:id_w$} ", display_id, id_w = self.id_width)
         }
     }
 }
@@ -239,9 +240,19 @@ fn render_alignment_pane(
 
     // Calculate widths using a formatter helper
     let num_seqs = app.alignment.num_sequences();
-    let max_id_len = app.alignment.max_id_len().max(10);
+    let max_id_len = if app.show_short_ids {
+        app.alignment.max_short_id_len().max(10)
+    } else {
+        app.alignment.max_id_len().max(10)
+    };
     let max_collapse = app.max_collapse_count();
-    let id_formatter = IdFormatter::new(num_seqs, max_id_len, app.show_row_numbers, max_collapse);
+    let id_formatter = IdFormatter::new(
+        num_seqs,
+        max_id_len,
+        app.show_row_numbers,
+        max_collapse,
+        app.show_short_ids,
+    );
     let id_width = id_formatter.width();
 
     // Account for tree width if showing (separator + tree column)
@@ -876,7 +887,6 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Mode::Insert => Style::default().bg(Color::Green).fg(Color::Black),
         Mode::Command => Style::default().bg(Color::Yellow).fg(Color::Black),
         Mode::Search => Style::default().bg(Color::Magenta).fg(Color::White),
-        Mode::Browse => Style::default().bg(Color::Cyan).fg(Color::Black),
         Mode::Visual => Style::default()
             .bg(Color::Rgb(100, 100, 180))
             .fg(Color::White),
@@ -990,6 +1000,7 @@ pub fn visible_dimensions(
     max_id_len: usize,
     show_ruler: bool,
     show_row_numbers: bool,
+    show_short_ids: bool,
     split_mode: Option<SplitMode>,
     has_ss_cons: bool,
     show_consensus: bool,
@@ -1003,6 +1014,7 @@ pub fn visible_dimensions(
         max_id_len.max(10),
         show_row_numbers,
         max_collapse_count,
+        show_short_ids,
     );
     let ruler_height = if show_ruler { RULER_HEIGHT } else { 0 };
     let ss_cons_height: u16 = if has_ss_cons { 1 } else { 0 };
@@ -1126,10 +1138,9 @@ fn render_splash(frame: &mut Frame, area: Rect) {
 
     // Commands - use fixed width format for alignment
     let commands = [
-        (":e       ", "Browse and open a file"),
-        (":e <file>", "Open a specific file  "),
-        ("?        ", "Show help             "),
-        (":q       ", "Quit                  "),
+        (":e <path>", "Open file (Tab=complete)"),
+        ("?        ", "Show help               "),
+        (":q       ", "Quit                    "),
     ];
     let cmd_width = 35;
     let cmd_pad = " ".repeat((area.width as usize).saturating_sub(cmd_width) / 2);
@@ -1145,20 +1156,6 @@ fn render_splash(frame: &mut Frame, area: Rect) {
 
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, area);
-}
-
-/// Render file explorer for browse mode.
-fn render_file_explorer(frame: &mut Frame, app: &App, area: Rect) {
-    if let Some(ref explorer) = app.file_explorer {
-        let block = Block::default()
-            .title(" Open File (Enter=select, Esc=cancel) ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan));
-
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
-        frame.render_widget(&explorer.widget(), inner);
-    }
 }
 
 /// Render help overlay.

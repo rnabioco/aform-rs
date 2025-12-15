@@ -4,6 +4,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+/// Extract short ID from a Stockholm ID (strips coordinate suffix like /10000-20000).
+pub fn short_id(id: &str) -> &str {
+    id.split('/').next().unwrap_or(id)
+}
+
 /// Direction for shift operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShiftDirection {
@@ -227,6 +232,15 @@ impl Alignment {
     /// Get the maximum sequence ID length (for formatting).
     pub fn max_id_len(&self) -> usize {
         self.sequences.iter().map(|s| s.id.len()).max().unwrap_or(0)
+    }
+
+    /// Get the maximum short ID length (ID without coordinate suffix).
+    pub fn max_short_id_len(&self) -> usize {
+        self.sequences
+            .iter()
+            .map(|s| short_id(&s.id).len())
+            .max()
+            .unwrap_or(0)
     }
 
     /// Insert a gap at a specific position in all sequences and annotations.

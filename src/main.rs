@@ -72,6 +72,10 @@ struct Args {
     /// Show row numbers.
     #[arg(long)]
     rownum: bool,
+
+    /// Show short IDs (strip coordinate suffix like /10000-20000).
+    #[arg(long)]
+    shortid: bool,
 }
 
 const AFTER_HELP: &str = "\
@@ -82,6 +86,7 @@ INTERACTIVE COMMANDS:
 VISUALIZATION:
   :ruler          Toggle column ruler
   :rownum         Toggle row numbers
+  :shortid        Toggle short IDs (strip /start-end suffix)
   :split / :sp    Horizontal split view
   :vsplit / :vs   Vertical split view
   :only           Close split view
@@ -143,11 +148,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Apply display options from CLI
-    app.show_consensus = args.consensus;
-    app.show_conservation_bar = args.conservation;
-    app.show_ruler = args.ruler;
-    app.show_row_numbers = args.rownum;
+    // Apply display options from CLI (only enable, don't disable defaults)
+    if args.consensus {
+        app.show_consensus = true;
+    }
+    if args.conservation {
+        app.show_conservation_bar = true;
+    }
+    if args.ruler {
+        app.show_ruler = true;
+    }
+    if args.rownum {
+        app.show_row_numbers = true;
+    }
+    if args.shortid {
+        app.show_short_ids = true;
+    }
 
     // Apply clustering options (only if file loaded)
     if app.alignment.num_sequences() > 0 {
@@ -191,12 +207,18 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         } else {
             0
         };
+        let max_id_len = if app.show_short_ids {
+            app.alignment.max_short_id_len()
+        } else {
+            app.alignment.max_id_len()
+        };
         let (visible_rows, visible_cols) = ui::visible_dimensions(
             area,
             app.visible_sequence_count(),
-            app.alignment.max_id_len(),
+            max_id_len,
             app.show_ruler,
             app.show_row_numbers,
+            app.show_short_ids,
             app.split_mode,
             app.alignment.ss_cons().is_some(),
             app.show_consensus,
