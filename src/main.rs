@@ -23,7 +23,7 @@ use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     crossterm::{
-        event::{self, DisableMouseCapture, EnableMouseCapture, Event},
+        event::{self, DisableMouseCapture, EnableMouseCapture, Event, MouseEventKind},
         execute,
         terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
     },
@@ -243,10 +243,18 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         terminal.draw(|f| ui::render(f, app))?;
 
         // Handle events
-        if event::poll(Duration::from_millis(100))?
-            && let Event::Key(key) = event::read()?
-        {
-            input::handle_key(app, key, visible_rows);
+        if event::poll(Duration::from_millis(100))? {
+            match event::read()? {
+                Event::Key(key) => input::handle_key(app, key, visible_rows),
+                Event::Mouse(mouse) => match mouse.kind {
+                    MouseEventKind::ScrollUp => app.cursor_up(),
+                    MouseEventKind::ScrollDown => app.cursor_down(),
+                    MouseEventKind::ScrollLeft => app.cursor_left(),
+                    MouseEventKind::ScrollRight => app.cursor_right(),
+                    _ => {}
+                },
+                _ => {}
+            }
         }
 
         if app.should_quit {
