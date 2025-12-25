@@ -68,7 +68,7 @@ pub fn cluster_sequences_with_tree(sequences: &[Vec<char>], gap_chars: &[char]) 
         return ClusterResult {
             order: (0..n).collect(),
             tree_lines: if n == 1 {
-                vec!["─".to_string()]
+                vec!["·".to_string()]
             } else {
                 vec![]
             },
@@ -114,7 +114,7 @@ pub fn cluster_sequences_with_collapse(
     if num_unique == 1 {
         return ClusterResult {
             order: collapse_groups[0].1.clone(),
-            tree_lines: vec!["─".to_string(); n],
+            tree_lines: vec!["·".to_string(); n],
             tree_width: 1,
             group_order: Some(vec![0]), // Only one group at position 0
         };
@@ -214,7 +214,7 @@ fn build_tree_chars(
 ) -> (Vec<String>, usize) {
     let steps = dend.steps();
     if steps.is_empty() || n <= 1 {
-        return (vec!["─".to_string(); n], 1);
+        return (vec!["·".to_string(); n], 1);
     }
 
     // Create a mapping from original sequence index to display row
@@ -295,9 +295,9 @@ fn build_tree_chars(
     for row in 0..n {
         let mut chars: Vec<char> = vec![' '; tree_width];
 
-        // First char is always horizontal line connecting to tree
+        // First char is always dot connecting to tree
         if tree_width > 0 {
-            chars[0] = '─';
+            chars[0] = '·';
         }
 
         // For each internal node, determine what character to draw at its column
@@ -311,15 +311,15 @@ fn build_tree_chars(
                 // This node doesn't span this row - draw horizontal line if needed
                 // (continuation from left)
                 if chars[col] == ' ' && col > 0 && chars[col - 1] != ' ' {
-                    // Continue horizontal line through
-                    chars[col] = '─';
+                    // Continue dot through
+                    chars[col] = '·';
                 }
             } else if row == info.row_min && row == info.row_max {
                 // Single-row span (shouldn't happen for internal nodes, but handle it)
-                chars[col] = '─';
+                chars[col] = '·';
             } else if row == info.row_min {
                 // Top of this node's span
-                chars[col] = '┬';
+                chars[col] = '┐';
             } else if row == info.row_max {
                 // Bottom of this node's span
                 chars[col] = '┘';
@@ -329,15 +329,15 @@ fn build_tree_chars(
             }
         }
 
-        // Fill horizontal lines from left until we hit a vertical element or end
+        // Fill dots from left until we hit a vertical element or end
         let mut fill = true;
         for ch in &mut chars {
             if *ch == ' ' && fill {
-                *ch = '─';
+                *ch = '·';
             } else if *ch == '│' || *ch == '┘' {
                 fill = false;
-            } else if *ch == '┬' {
-                // After a ┬, continue filling to the right
+            } else if *ch == '┐' {
+                // After a ┐, continue filling to the right
                 fill = true;
             }
         }
@@ -444,7 +444,7 @@ mod tests {
         // Check each line contains expected characters
         for line in &result.tree_lines {
             assert!(
-                line.chars().all(|c| "─┬┘│ ".contains(c)),
+                line.chars().all(|c| "·┐┘│ ".contains(c)),
                 "Tree line '{}' contains unexpected characters",
                 line
             );
@@ -458,7 +458,7 @@ mod tests {
         let result = cluster_sequences_with_tree(&sequences, &gaps);
 
         assert_eq!(result.tree_lines.len(), 1);
-        assert_eq!(result.tree_lines[0], "─");
+        assert_eq!(result.tree_lines[0], "·");
     }
 
     #[test]
