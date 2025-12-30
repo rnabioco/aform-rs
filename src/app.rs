@@ -236,6 +236,8 @@ pub struct App {
     pub(crate) cluster_order: Option<Vec<usize>>,
     /// Pre-computed ASCII tree characters for each display row.
     pub(crate) cluster_tree: Option<Vec<String>>,
+    /// Pre-computed ASCII tree characters for collapsed view (one per group).
+    pub(crate) collapsed_tree: Option<Vec<String>>,
     /// Width of the tree column in characters.
     pub(crate) tree_width: usize,
     /// Whether to show the dendrogram tree visualization.
@@ -319,6 +321,7 @@ impl Default for App {
             clipboard: None,
             cluster_order: None,
             cluster_tree: None,
+            collapsed_tree: None,
             tree_width: 0,
             show_tree: false,
             cluster_group_order: None,
@@ -1485,6 +1488,7 @@ impl App {
         );
         self.cluster_order = Some(result.order);
         self.cluster_tree = Some(result.tree_lines);
+        self.collapsed_tree = result.collapsed_tree_lines;
         self.tree_width = result.tree_width;
         self.cluster_group_order = result.group_order;
 
@@ -1498,6 +1502,7 @@ impl App {
     pub fn uncluster(&mut self) {
         self.cluster_order = None;
         self.cluster_tree = None;
+        self.collapsed_tree = None;
         self.tree_width = 0;
         self.show_tree = false;
         self.cluster_group_order = None;

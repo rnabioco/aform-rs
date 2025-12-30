@@ -17,6 +17,9 @@ pub struct ClusterResult {
     /// Group order when clustering with collapse (maps display_row -> group_index).
     /// Only populated when clustering collapsed groups.
     pub group_order: Option<Vec<usize>>,
+    /// Tree lines for collapsed view (one per group, not per sequence).
+    /// Only populated when clustering with collapse groups.
+    pub collapsed_tree_lines: Option<Vec<String>>,
 }
 
 /// Compute Hamming distance between two sequences (count mismatches).
@@ -68,12 +71,13 @@ pub fn cluster_sequences_with_tree(sequences: &[Vec<char>], gap_chars: &[char]) 
         return ClusterResult {
             order: (0..n).collect(),
             tree_lines: if n == 1 {
-                vec!["·".to_string()]
+                vec!["─".to_string()]
             } else {
                 vec![]
             },
             tree_width: if n == 1 { 1 } else { 0 },
             group_order: None,
+            collapsed_tree_lines: None,
         };
     }
 
@@ -91,6 +95,7 @@ pub fn cluster_sequences_with_tree(sequences: &[Vec<char>], gap_chars: &[char]) 
         tree_lines,
         tree_width,
         group_order: None,
+        collapsed_tree_lines: None,
     }
 }
 
@@ -114,9 +119,10 @@ pub fn cluster_sequences_with_collapse(
     if num_unique == 1 {
         return ClusterResult {
             order: collapse_groups[0].1.clone(),
-            tree_lines: vec!["·".to_string(); n],
+            tree_lines: vec!["─".to_string(); n],
             tree_width: 1,
             group_order: Some(vec![0]), // Only one group at position 0
+            collapsed_tree_lines: Some(vec!["─".to_string()]), // One group = one line
         };
     }
 
@@ -141,10 +147,17 @@ pub fn cluster_sequences_with_collapse(
     let mut order = Vec::with_capacity(n);
     let mut tree_lines = Vec::with_capacity(n);
 
+    // Build collapsed tree lines in display order (one per group)
+    let mut collapsed_tree_lines = Vec::with_capacity(num_unique);
+
     for &rep_idx in &rep_order {
         let (_, members) = &collapse_groups[rep_idx];
         let tree_line = &rep_tree_lines[rep_order.iter().position(|&x| x == rep_idx).unwrap()];
 
+        // Add to collapsed tree (one line per group)
+        collapsed_tree_lines.push(tree_line.clone());
+
+        // Expand for full tree (one line per member)
         for &member in members {
             order.push(member);
             tree_lines.push(tree_line.clone());
@@ -156,6 +169,7 @@ pub fn cluster_sequences_with_collapse(
         tree_lines,
         tree_width,
         group_order: Some(rep_order),
+        collapsed_tree_lines: Some(collapsed_tree_lines),
     }
 }
 
@@ -194,18 +208,8 @@ fn traverse_cluster(cluster: usize, n: usize, steps: &[kodama::Step<f64>], order
     }
 }
 
-/// Information about a node in the dendrogram for tree rendering.
-#[derive(Debug, Clone)]
-struct NodeInfo {
-    /// First row in display order that belongs to this subtree.
-    row_min: usize,
-    /// Last row in display order that belongs to this subtree.
-    row_max: usize,
-    /// Depth from leaves (leaves = 0, root = max).
-    depth: usize,
-}
-
-/// Build ASCII tree representation from dendrogram.
+/// Build dendrogram representation showing tree topology.
+/// Uses bracket-style characters: ─┬┘│ to show which sequences group together.
 /// Returns (tree_lines, tree_width).
 fn build_tree_chars(
     dend: &kodama::Dendrogram<f64>,
@@ -213,132 +217,105 @@ fn build_tree_chars(
     order: &[usize],
 ) -> (Vec<String>, usize) {
     let steps = dend.steps();
+
+    const MAX_TREE_WIDTH: usize = 16;
+
     if steps.is_empty() || n <= 1 {
-        return (vec!["·".to_string(); n], 1);
+        return (vec!["─".to_string(); n], 1);
     }
 
-    // Create a mapping from original sequence index to display row
-    let mut orig_to_row = vec![0; n];
+    // Map from original sequence index to display row
+    let mut orig_to_row = vec![0usize; n];
     for (row, &orig) in order.iter().enumerate() {
         orig_to_row[orig] = row;
     }
 
-    // Compute NodeInfo for all nodes (leaves + internal)
-    // Node IDs: 0..n are leaves, n..2n-1 are internal nodes (from merge steps)
-    let mut node_info = vec![
-        NodeInfo {
-            row_min: 0,
-            row_max: 0,
-            depth: 0
-        };
-        2 * n - 1
-    ];
+    // For each node (leaf or internal), track its row span in display order
+    // Leaves span a single row, internal nodes span from min to max of children
+    let mut node_row_min = vec![0usize; 2 * n - 1];
+    let mut node_row_max = vec![0usize; 2 * n - 1];
 
     // Initialize leaves
     for orig in 0..n {
         let row = orig_to_row[orig];
-        node_info[orig] = NodeInfo {
-            row_min: row,
-            row_max: row,
-            depth: 0,
-        };
+        node_row_min[orig] = row;
+        node_row_max[orig] = row;
     }
 
-    // Compute internal nodes bottom-up (steps are in merge order)
+    // Compute internal node spans (steps create nodes n, n+1, n+2, ...)
     for (i, step) in steps.iter().enumerate() {
         let node_id = n + i;
-        let c1 = &node_info[step.cluster1];
-        let c2 = &node_info[step.cluster2];
-        node_info[node_id] = NodeInfo {
-            row_min: c1.row_min.min(c2.row_min),
-            row_max: c1.row_max.max(c2.row_max),
-            depth: c1.depth.max(c2.depth) + 1,
-        };
+        node_row_min[node_id] = node_row_min[step.cluster1].min(node_row_min[step.cluster2]);
+        node_row_max[node_id] = node_row_max[step.cluster1].max(node_row_max[step.cluster2]);
     }
 
-    // Find max depth (tree width in columns)
-    let max_depth = node_info.iter().map(|n| n.depth).max().unwrap_or(0);
+    // Assign columns to internal nodes using recursive traversal
+    // Each node gets the next available column when we "close" it
+    let mut node_col = vec![0usize; 2 * n - 1];
+    let mut next_col = 0usize;
 
-    // Cap tree width to avoid very wide trees
-    const MAX_TREE_WIDTH: usize = 8;
-    let tree_width = max_depth.min(MAX_TREE_WIDTH);
-
-    // For each internal node, we need to track which column it occupies.
-    // Use depth-based column: depth 1 nodes at column 0, depth 2 at column 1, etc.
-    // But multiple nodes can have the same depth, so we assign unique columns.
-
-    // Sort internal nodes by depth, then by row_min to ensure consistent ordering
-    let mut internal_nodes: Vec<(usize, &NodeInfo)> =
-        (n..2 * n - 1).map(|id| (id, &node_info[id])).collect();
-    internal_nodes.sort_by_key(|(_, info)| (info.depth, info.row_min));
-
-    // Assign columns based on depth
-    // Use sqrt scaling when tree is deep - this gives more visual space to
-    // shallow/early branching points which are more informative
-    let mut node_columns = vec![0usize; 2 * n - 1];
-    for (node_id, info) in &internal_nodes {
-        let col = if max_depth <= MAX_TREE_WIDTH {
-            // No scaling needed
-            info.depth - 1
-        } else {
-            // Use sqrt scaling: sqrt(normalized_depth) * (tree_width - 1)
-            // This spreads out shallow branching more than linear scaling
-            let normalized = (info.depth - 1) as f64 / (max_depth - 1).max(1) as f64;
-            (normalized.sqrt() * (tree_width - 1) as f64) as usize
-        };
-        node_columns[*node_id] = col.min(tree_width - 1);
+    // Process nodes in order of their creation (merge order)
+    // This ensures parent nodes get columns after their children
+    for (i, _step) in steps.iter().enumerate() {
+        let node_id = n + i;
+        node_col[node_id] = next_col;
+        next_col += 1;
     }
 
-    // Build tree lines for each row
+    let tree_width = next_col.clamp(1, MAX_TREE_WIDTH);
+
+    // Scale columns if we exceed max width
+    if next_col > MAX_TREE_WIDTH {
+        for col in node_col.iter_mut().skip(n) {
+            *col = (*col * (MAX_TREE_WIDTH - 1)) / (next_col - 1).max(1);
+        }
+    }
+
+    // Build tree lines
     let mut tree_lines = Vec::with_capacity(n);
 
     for row in 0..n {
-        let mut chars: Vec<char> = vec![' '; tree_width];
+        let mut chars = vec![' '; tree_width];
 
-        // First char is always dot connecting to tree
-        if tree_width > 0 {
-            chars[0] = '·';
-        }
-
-        // For each internal node, determine what character to draw at its column
-        for &(node_id, info) in &internal_nodes {
-            let col = node_columns[node_id];
+        // For each internal node, draw its contribution to this row
+        for (i, _step) in steps.iter().enumerate() {
+            let node_id = n + i;
+            let col = node_col[node_id];
             if col >= tree_width {
                 continue;
             }
 
-            if row < info.row_min || row > info.row_max {
-                // This node doesn't span this row - draw horizontal line if needed
-                // (continuation from left)
-                if chars[col] == ' ' && col > 0 && chars[col - 1] != ' ' {
-                    // Continue dot through
-                    chars[col] = '·';
-                }
-            } else if row == info.row_min && row == info.row_max {
-                // Single-row span (shouldn't happen for internal nodes, but handle it)
-                chars[col] = '·';
-            } else if row == info.row_min {
-                // Top of this node's span
-                chars[col] = '┐';
-            } else if row == info.row_max {
-                // Bottom of this node's span
+            let row_min = node_row_min[node_id];
+            let row_max = node_row_max[node_id];
+
+            if row < row_min || row > row_max {
+                // Outside this node's span
+                continue;
+            }
+
+            if row == row_min {
+                // Top of bracket
+                chars[col] = '┬';
+            } else if row == row_max {
+                // Bottom of bracket
                 chars[col] = '┘';
             } else {
-                // Middle of span - vertical line
-                chars[col] = '│';
+                // Middle - vertical line (don't overwrite existing)
+                if chars[col] == ' ' {
+                    chars[col] = '│';
+                }
             }
         }
 
-        // Fill dots from left until we hit a vertical element or end
-        let mut fill = true;
-        for ch in &mut chars {
-            if *ch == ' ' && fill {
-                *ch = '·';
-            } else if *ch == '│' || *ch == '┘' {
-                fill = false;
-            } else if *ch == '┐' {
-                // After a ┐, continue filling to the right
-                fill = true;
+        // Fill horizontal lines from left to first bracket character
+        let fill_to = chars
+            .iter()
+            .position(|&ch| ch == '│' || ch == '┬' || ch == '┘')
+            .unwrap_or(tree_width);
+
+        for ch in chars.iter_mut().take(fill_to) {
+            if *ch == ' ' {
+                *ch = '─';
             }
         }
 
@@ -439,12 +416,12 @@ mod tests {
 
         // Check we got 4 tree lines
         assert_eq!(result.tree_lines.len(), 4);
-        // Check tree has expected width (depth = 2 for this tree)
+        // Check tree has expected width
         assert!(result.tree_width >= 1, "Tree should have some width");
-        // Check each line contains expected characters
+        // Check each line contains expected dendrogram characters
         for line in &result.tree_lines {
             assert!(
-                line.chars().all(|c| "·┐┘│ ".contains(c)),
+                line.chars().all(|c| "─┬┘│ ".contains(c)),
                 "Tree line '{}' contains unexpected characters",
                 line
             );
@@ -458,7 +435,8 @@ mod tests {
         let result = cluster_sequences_with_tree(&sequences, &gaps);
 
         assert_eq!(result.tree_lines.len(), 1);
-        assert_eq!(result.tree_lines[0], "·");
+        assert_eq!(result.tree_width, 1);
+        assert_eq!(result.tree_lines[0], "─");
     }
 
     #[test]

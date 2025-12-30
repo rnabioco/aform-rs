@@ -1008,33 +1008,30 @@ fn render_tree_column(
     let tree_seq_area = v_chunks[1];
 
     // Render tree lines
-    // Note: When collapse is enabled, tree lines may not align properly
-    // since the tree was computed on original sequences, not collapsed groups.
-    // In that case, we skip tree rendering.
+    // Use collapsed_tree when collapse is enabled and available, otherwise use cluster_tree
     let mut lines = Vec::new();
-    if let Some(ref tree_lines) = app.cluster_tree {
-        if app.collapse_identical {
-            // Tree doesn't make sense with collapse - show empty
-            for _ in 0..actual_seq_rows {
+    let tree_lines = if app.collapse_identical && app.collapsed_tree.is_some() {
+        app.collapsed_tree.as_ref()
+    } else {
+        app.cluster_tree.as_ref()
+    };
+
+    if let Some(tree_lines) = tree_lines {
+        for display_row in
+            viewport_row..(viewport_row + visible_rows).min(app.visible_sequence_count())
+        {
+            // Tree lines are already in display order (clustered), use display_row directly
+            if let Some(tree_str) = tree_lines.get(display_row) {
+                let tree_color = match app.terminal_theme {
+                    TerminalTheme::Dark => app.theme.misc.tree_dark_theme.to_color(),
+                    TerminalTheme::Light => app.theme.misc.tree_light_theme.to_color(),
+                };
+                lines.push(Line::from(Span::styled(
+                    tree_str.clone(),
+                    Style::reset().fg(tree_color),
+                )));
+            } else {
                 lines.push(Line::from(""));
-            }
-        } else {
-            for display_row in
-                viewport_row..(viewport_row + visible_rows).min(app.visible_sequence_count())
-            {
-                // Tree lines are already in display order (clustered), use display_row directly
-                if let Some(tree_str) = tree_lines.get(display_row) {
-                    let tree_color = match app.terminal_theme {
-                        TerminalTheme::Dark => app.theme.misc.tree_dark_theme.to_color(),
-                        TerminalTheme::Light => app.theme.misc.tree_light_theme.to_color(),
-                    };
-                    lines.push(Line::from(Span::styled(
-                        tree_str.clone(),
-                        Style::reset().fg(tree_color),
-                    )));
-                } else {
-                    lines.push(Line::from(""));
-                }
             }
         }
     }
