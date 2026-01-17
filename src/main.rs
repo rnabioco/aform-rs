@@ -30,6 +30,7 @@ use ratatui::{
 };
 
 use app::{App, TerminalTheme};
+use color::Theme;
 
 /// Terminal Stockholm alignment editor.
 #[derive(Parser, Debug)]
@@ -118,11 +119,21 @@ COLOR SCHEMES:
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    // Load configuration
-    let config = config::Config::load();
-
-    // Detect terminal theme before entering raw mode
+    // Detect terminal theme before entering raw mode (must happen before raw mode)
     let terminal_theme = detect_terminal_theme();
+
+    // Load configuration
+    let (config, config_file_loaded) = config::Config::load();
+
+    // Select theme: use config if file was loaded, otherwise use theme-appropriate defaults
+    let theme = if config_file_loaded {
+        config.theme
+    } else {
+        match terminal_theme {
+            TerminalTheme::Light => Theme::default_for_light(),
+            TerminalTheme::Dark => Theme::default(),
+        }
+    };
 
     // Setup terminal
     enable_raw_mode()?;
@@ -134,7 +145,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create app
     let mut app = App::new();
     app.terminal_theme = terminal_theme;
-    app.theme = config.theme;
+    app.theme = theme;
 
     // Set color scheme
     if let Some(scheme) = app::ColorScheme::from_str(&args.color) {
@@ -149,6 +160,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Auto-detect sequence type and precompute collapse groups
             app.detect_sequence_type();
             app.precompute_collapse_groups();
+
+            // Auto-enable structure coloring for RNA files with SS_cons
+            if args.color == "none" && app.alignment.ss_cons().is_some() {
+                app.color_scheme = app::ColorScheme::Structure;
+            }
         }
     }
 

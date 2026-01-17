@@ -161,6 +161,16 @@ impl Default for BorderColors {
     }
 }
 
+impl BorderColors {
+    /// Light mode defaults with darker colors for visibility on light backgrounds.
+    pub fn default_for_light() -> Self {
+        Self {
+            active: Rgb::new(0, 0, 180),    // Dark blue
+            inactive: Rgb::new(100, 100, 100), // Gray
+        }
+    }
+}
+
 /// Ruler display colors.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -176,6 +186,17 @@ impl Default for RulerColors {
             numbers: Rgb::new(128, 128, 128), // DarkGray
             ticks: Rgb::new(128, 128, 128),   // DarkGray
             pair_line: Rgb::new(255, 0, 255), // Magenta
+        }
+    }
+}
+
+impl RulerColors {
+    /// Light mode defaults with darker colors for visibility on light backgrounds.
+    pub fn default_for_light() -> Self {
+        Self {
+            numbers: Rgb::new(80, 80, 80),    // Gray
+            ticks: Rgb::new(80, 80, 80),      // Gray
+            pair_line: Rgb::new(180, 0, 180), // Darker magenta
         }
     }
 }
@@ -213,6 +234,13 @@ impl Default for ModeColors {
     }
 }
 
+impl ModeColors {
+    /// Light mode defaults - same colors work well on both themes.
+    pub fn default_for_light() -> Self {
+        Self::default()
+    }
+}
+
 /// Status bar colors.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -243,6 +271,22 @@ impl Default for StatusBarColors {
     }
 }
 
+impl StatusBarColors {
+    /// Light mode defaults with lighter background and darker text colors.
+    pub fn default_for_light() -> Self {
+        Self {
+            background: Rgb::new(200, 200, 200),  // LightGray
+            position: Rgb::new(0, 0, 0),          // Black
+            alignment_info: Rgb::new(0, 100, 150), // Dark cyan
+            sequence_type: Rgb::new(0, 100, 0),   // Dark green
+            color_scheme: Rgb::new(150, 0, 150),  // Dark magenta
+            structure_info: Rgb::new(180, 140, 0), // Dark yellow/gold
+            selection_info: Rgb::new(0, 80, 120), // Dark blue
+            modes: ModeColors::default_for_light(),
+        }
+    }
+}
+
 /// ID column colors.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -258,6 +302,17 @@ impl Default for IdColumnColors {
             text: Rgb::new(0, 255, 255),          // Cyan
             selected_bg: Rgb::new(80, 80, 140),   // Purple-ish
             selected_fg: Rgb::new(255, 255, 255), // White
+        }
+    }
+}
+
+impl IdColumnColors {
+    /// Light mode defaults with dark text colors for visibility on light backgrounds.
+    pub fn default_for_light() -> Self {
+        Self {
+            text: Rgb::new(0, 0, 139),             // Dark blue
+            selected_bg: Rgb::new(180, 180, 220),  // Light purple
+            selected_fg: Rgb::new(0, 0, 0),        // Black
         }
     }
 }
@@ -309,6 +364,31 @@ impl Default for AnnotationColors {
     }
 }
 
+impl AnnotationColors {
+    /// Light mode defaults with light-tinted backgrounds and darker text colors.
+    pub fn default_for_light() -> Self {
+        Self {
+            ss_cons_fg: Rgb::new(140, 100, 0),        // Dark gold
+            ss_cons_bg: Rgb::new(235, 235, 250),      // Pale blue
+            ss_cons_paired_fg: Rgb::new(0, 0, 0),     // Black
+            ss_cons_paired_bg: Rgb::new(255, 220, 100), // Light orange/yellow
+            rf_conserved_fg: Rgb::new(0, 100, 0),     // Dark green
+            rf_conserved_bg: Rgb::new(235, 250, 235), // Pale green
+            rf_variable_fg: Rgb::new(100, 100, 100),  // Gray
+            rf_variable_bg: Rgb::new(245, 245, 245),  // Very light gray
+            pp_cons_bg: Rgb::new(235, 235, 250),      // Pale blue
+            consensus_fg: Rgb::new(0, 100, 150),      // Dark cyan
+            consensus_bg: Rgb::new(235, 250, 235),    // Pale green
+            conservation_bg: Rgb::new(250, 235, 250), // Pale magenta
+            label_ss_cons_fg: Rgb::new(140, 100, 0),  // Dark gold
+            label_rf_fg: Rgb::new(0, 100, 0),         // Dark green
+            label_pp_cons_fg: Rgb::new(140, 100, 0),  // Dark gold
+            label_consensus_fg: Rgb::new(0, 100, 150), // Dark cyan
+            label_conservation_fg: Rgb::new(150, 0, 150), // Dark magenta
+        }
+    }
+}
+
 /// Selection and highlight colors.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -340,6 +420,23 @@ impl Default for SelectionColors {
     }
 }
 
+impl SelectionColors {
+    /// Light mode defaults with lighter backgrounds for visibility.
+    pub fn default_for_light() -> Self {
+        Self {
+            visual_bg: Rgb::new(180, 180, 220),   // Light purple
+            visual_fg: Rgb::new(0, 0, 0),         // Black
+            search_current_bg: Rgb::new(255, 255, 0), // Yellow (works well)
+            search_current_fg: Rgb::new(0, 0, 0),     // Black
+            search_other_bg: Rgb::new(220, 220, 150), // Light yellow-ish
+            search_other_fg: Rgb::new(0, 0, 0),       // Black
+            pair_highlight_bg: Rgb::new(255, 180, 255), // Light magenta
+            pair_highlight_fg: Rgb::new(0, 0, 0),      // Black
+            gap_column_bg: Rgb::new(250, 220, 220),    // Light red
+        }
+    }
+}
+
 /// Command and search line colors.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -355,6 +452,17 @@ impl Default for CommandLineColors {
             command_prefix: Rgb::new(255, 255, 0), // Yellow
             search_prefix: Rgb::new(255, 0, 255),  // Magenta
             help_hint: Rgb::new(128, 128, 128),    // DarkGray
+        }
+    }
+}
+
+impl CommandLineColors {
+    /// Light mode defaults with darker colors for visibility.
+    pub fn default_for_light() -> Self {
+        Self {
+            command_prefix: Rgb::new(180, 140, 0), // Dark gold
+            search_prefix: Rgb::new(150, 0, 150),  // Dark magenta
+            help_hint: Rgb::new(100, 100, 100),    // Gray
         }
     }
 }
@@ -378,6 +486,17 @@ impl Default for MiscColors {
     }
 }
 
+impl MiscColors {
+    /// Light mode defaults with darker separator for visibility.
+    pub fn default_for_light() -> Self {
+        Self {
+            separator: Rgb::new(100, 100, 100), // Gray
+            tree_dark_theme: Rgb::new(255, 255, 255), // White (unchanged)
+            tree_light_theme: Rgb::new(0, 0, 0),      // Black (unchanged)
+        }
+    }
+}
+
 /// Complete UI theme containing all color settings.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -390,4 +509,20 @@ pub struct Theme {
     pub selection: SelectionColors,
     pub command_line: CommandLineColors,
     pub misc: MiscColors,
+}
+
+impl Theme {
+    /// Create a theme optimized for light terminal backgrounds.
+    pub fn default_for_light() -> Self {
+        Self {
+            border: BorderColors::default_for_light(),
+            ruler: RulerColors::default_for_light(),
+            status_bar: StatusBarColors::default_for_light(),
+            id_column: IdColumnColors::default_for_light(),
+            annotations: AnnotationColors::default_for_light(),
+            selection: SelectionColors::default_for_light(),
+            command_line: CommandLineColors::default_for_light(),
+            misc: MiscColors::default_for_light(),
+        }
+    }
 }

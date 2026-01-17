@@ -23,22 +23,24 @@ impl Config {
     /// Search order:
     /// 1. `./aform.toml` (current directory)
     /// 2. `~/.config/aform/aform.toml` (XDG config)
-    pub fn load() -> Self {
+    ///
+    /// Returns `(config, was_file_loaded)` tuple.
+    pub fn load() -> (Self, bool) {
         // Try current directory first
         if let Some(config) = Self::load_from_path(&PathBuf::from("aform.toml")) {
-            return config;
+            return (config, true);
         }
 
         // Try XDG config directory
         if let Some(config_dir) = dirs::config_dir() {
             let config_path = config_dir.join("aform").join("aform.toml");
             if let Some(config) = Self::load_from_path(&config_path) {
-                return config;
+                return (config, true);
             }
         }
 
         // Fall back to defaults
-        Self::default()
+        (Self::default(), false)
     }
 
     /// Load configuration from a specific path.
