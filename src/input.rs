@@ -101,7 +101,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent, page_size: usize) {
         Mode::Insert => handle_insert_mode(app, key),
         Mode::Command => handle_command_mode(app, key),
         Mode::Search => handle_search_mode(app, key),
-        Mode::Visual => handle_visual_mode(app, key, page_size),
+        Mode::Visual | Mode::VisualLine => handle_visual_mode(app, key, page_size),
     }
 }
 
@@ -127,13 +127,20 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent, page_size: usize) {
         app.clear_count();
     }
 
-    // Try shared movement keys first (unless it's a key with special normal-mode handling)
+    // Check if we're in a two-key sequence (like "Ctrl-w..." or "g...")
+    let in_two_key_sequence = pending_status
+        .as_ref()
+        .map(|s| s.ends_with("..."))
+        .unwrap_or(false);
+
+    // Try shared movement keys first (unless it's a key with special normal-mode handling
+    // or we're in a two-key sequence)
     let is_special_normal_key = matches!(
         (key.modifiers, key.code),
         (KeyModifiers::NONE, KeyCode::Char('0' | 'g' | 'w' | 'b'))
             | (KeyModifiers::CONTROL, KeyCode::Char('w'))
     );
-    if !is_special_normal_key && handle_movement_keys(app, key, page_size) {
+    if !in_two_key_sequence && !is_special_normal_key && handle_movement_keys(app, key, page_size) {
         return;
     }
 
@@ -261,6 +268,11 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent, page_size: usize) {
         // Visual mode
         (KeyModifiers::NONE, KeyCode::Char('v')) => {
             app.enter_visual_mode();
+        }
+
+        // Visual line mode
+        (KeyModifiers::SHIFT, KeyCode::Char('V')) => {
+            app.enter_visual_line_mode();
         }
 
         // Help (some terminals send ? without SHIFT modifier)
@@ -561,6 +573,10 @@ fn handle_visual_mode(app: &mut App, key: KeyEvent, page_size: usize) {
     match (key.modifiers, key.code) {
         // Exit visual mode
         (KeyModifiers::NONE, KeyCode::Esc | KeyCode::Char('v')) => {
+            app.exit_visual_mode();
+        }
+        // Exit visual line mode with V
+        (KeyModifiers::SHIFT, KeyCode::Char('V')) => {
             app.exit_visual_mode();
         }
 

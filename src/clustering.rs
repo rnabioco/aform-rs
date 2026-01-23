@@ -497,4 +497,100 @@ mod tests {
         assert_eq!(result.order.len(), 3);
         assert_eq!(result.tree_lines.len(), 3);
     }
+
+    #[test]
+    fn test_cluster_changes_order() {
+        // Sequences arranged so clustering MUST change order:
+        // 0 and 2 are similar (AAAA vs AAAG), 1 and 3 are similar (UUUU vs UUUG)
+        // Original order [0, 1, 2, 3] should become something like [0, 2, 1, 3] or [1, 3, 0, 2]
+        let sequences = vec![
+            "AAAA".chars().collect(), // 0 - similar to 2
+            "UUUU".chars().collect(), // 1 - similar to 3
+            "AAAG".chars().collect(), // 2 - similar to 0
+            "UUUG".chars().collect(), // 3 - similar to 1
+        ];
+        let gaps = vec!['-', '.'];
+        let order = cluster_sequences(&sequences, &gaps);
+
+        // Order should NOT be [0,1,2,3] - similar sequences should be adjacent
+        assert_ne!(
+            order,
+            vec![0, 1, 2, 3],
+            "Clustering should change order to group similar sequences"
+        );
+
+        // Verify similar sequences are adjacent:
+        // 0 and 2 should be adjacent (both start with AAA)
+        let pos0 = order.iter().position(|&x| x == 0).unwrap();
+        let pos2 = order.iter().position(|&x| x == 2).unwrap();
+        assert!(
+            (pos0 as i32 - pos2 as i32).abs() == 1,
+            "Sequences 0 and 2 (both AAAX) should be adjacent, got positions {} and {}",
+            pos0,
+            pos2
+        );
+
+        // 1 and 3 should be adjacent (both start with UUU)
+        let pos1 = order.iter().position(|&x| x == 1).unwrap();
+        let pos3 = order.iter().position(|&x| x == 3).unwrap();
+        assert!(
+            (pos1 as i32 - pos3 as i32).abs() == 1,
+            "Sequences 1 and 3 (both UUUX) should be adjacent, got positions {} and {}",
+            pos1,
+            pos3
+        );
+    }
+
+    #[test]
+    fn test_cluster_protein_sequences() {
+        // Test with protein-like sequences to ensure clustering works for non-RNA
+        let sequences = vec![
+            "MKTL".chars().collect(), // 0 - similar to 2
+            "WFGH".chars().collect(), // 1 - similar to 3
+            "MKTV".chars().collect(), // 2 - similar to 0
+            "WFGI".chars().collect(), // 3 - similar to 1
+        ];
+        let gaps = vec!['-', '.'];
+        let order = cluster_sequences(&sequences, &gaps);
+
+        // Similar sequences should be adjacent
+        let pos0 = order.iter().position(|&x| x == 0).unwrap();
+        let pos2 = order.iter().position(|&x| x == 2).unwrap();
+        assert!(
+            (pos0 as i32 - pos2 as i32).abs() == 1,
+            "Protein sequences 0 and 2 (both MKT*) should be adjacent"
+        );
+
+        let pos1 = order.iter().position(|&x| x == 1).unwrap();
+        let pos3 = order.iter().position(|&x| x == 3).unwrap();
+        assert!(
+            (pos1 as i32 - pos3 as i32).abs() == 1,
+            "Protein sequences 1 and 3 (both WFG*) should be adjacent"
+        );
+    }
+
+    #[test]
+    fn test_cluster_all_unique_sequences() {
+        // Test when all sequences are unique (common for protein alignments)
+        // This tests the code path where num_unique == n
+        let sequences = vec![
+            "AAAA".chars().collect(),
+            "CCCC".chars().collect(),
+            "GGGG".chars().collect(),
+            "UUUU".chars().collect(),
+        ];
+        let gaps = vec!['-', '.'];
+
+        // Create collapse groups where each sequence is its own group
+        let collapse_groups = vec![(0, vec![0]), (1, vec![1]), (2, vec![2]), (3, vec![3])];
+
+        let result = cluster_sequences_with_collapse(&sequences, &gaps, &collapse_groups);
+
+        // Should still produce a valid ordering with all 4 sequences
+        assert_eq!(result.order.len(), 4);
+        assert!(result.order.contains(&0));
+        assert!(result.order.contains(&1));
+        assert!(result.order.contains(&2));
+        assert!(result.order.contains(&3));
+    }
 }

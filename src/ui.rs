@@ -33,8 +33,9 @@ pub fn render(frame: &mut Frame, app: &App) {
                 chunks[0],
                 app.viewport_row,
                 app.viewport_col,
-                true, // always active
-                None, // no pane indicator
+                true,  // always active
+                None,  // no pane indicator
+                false, // is_secondary
             );
         }
         Some(SplitMode::Horizontal) => {
@@ -52,6 +53,7 @@ pub fn render(frame: &mut Frame, app: &App) {
                 app.viewport_col,
                 app.active_pane == ActivePane::Primary,
                 Some("Primary"),
+                false, // is_secondary
             );
             render_alignment_pane(
                 frame,
@@ -61,6 +63,7 @@ pub fn render(frame: &mut Frame, app: &App) {
                 app.secondary_viewport_col,
                 app.active_pane == ActivePane::Secondary,
                 Some("Secondary"),
+                true, // is_secondary
             );
         }
         Some(SplitMode::Vertical) => {
@@ -78,6 +81,7 @@ pub fn render(frame: &mut Frame, app: &App) {
                 app.viewport_col,
                 app.active_pane == ActivePane::Primary,
                 Some("Primary"),
+                false, // is_secondary
             );
             render_alignment_pane(
                 frame,
@@ -87,6 +91,7 @@ pub fn render(frame: &mut Frame, app: &App) {
                 app.secondary_viewport_col,
                 app.active_pane == ActivePane::Secondary,
                 Some("Secondary"),
+                true, // is_secondary
             );
         }
     }
@@ -199,6 +204,7 @@ impl IdFormatter {
 
 /// Render an alignment pane with the given viewport.
 /// Layout: IDs | Alignment (with ruler above, SS_cons below) | Tree
+#[allow(clippy::too_many_arguments)]
 fn render_alignment_pane(
     frame: &mut Frame,
     app: &App,
@@ -207,15 +213,26 @@ fn render_alignment_pane(
     viewport_col: usize,
     is_active: bool,
     pane_label: Option<&str>,
+    is_secondary: bool,
 ) {
+    // Get the alignment and file info for this pane
+    let (alignment, file_path, modified) = if is_secondary && app.secondary_alignment.is_some() {
+        (
+            app.secondary_alignment.as_ref().unwrap(),
+            app.secondary_file_path.as_ref(),
+            app.secondary_modified,
+        )
+    } else {
+        (&app.alignment, app.file_path.as_ref(), app.modified)
+    };
+
     // Build title with file info and optional pane label
     let file_info = format!(
         " {} {} ",
-        app.file_path
-            .as_ref()
+        file_path
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "[No file]".to_string()),
-        if app.modified { "[+]" } else { "" }
+        if modified { "[+]" } else { "" }
     );
 
     let title = match pane_label {
@@ -238,19 +255,24 @@ fn render_alignment_pane(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if app.alignment.sequences.is_empty() {
+    if alignment.sequences.is_empty() {
         render_splash(frame, inner);
         return;
     }
 
     // Calculate widths using a formatter helper
-    let num_seqs = app.alignment.num_sequences();
+    let num_seqs = alignment.num_sequences();
     let max_id_len = if app.show_short_ids {
-        app.alignment.max_short_id_len().max(10)
+        alignment.max_short_id_len().max(10)
     } else {
-        app.alignment.max_id_len().max(10)
+        alignment.max_id_len().max(10)
     };
-    let max_collapse = app.max_collapse_count();
+    // For secondary pane with its own alignment, collapse count is always 1
+    let max_collapse = if is_secondary && app.secondary_alignment.is_some() {
+        1
+    } else {
+        app.max_collapse_count()
+    };
     let id_formatter = IdFormatter::new(
         num_seqs,
         max_id_len,
@@ -261,14 +283,15 @@ fn render_alignment_pane(
     let id_width = id_formatter.width();
 
     // Account for tree width if showing (separator + tree column)
-    let tree_display_width = if app.show_tree && app.cluster_tree.is_some() {
+    // Only show tree for primary pane
+    let tree_display_width = if !is_secondary && app.show_tree && app.cluster_tree.is_some() {
         app.tree_width + 1
     } else {
         0
     };
 
     // Calculate alignment column width (cap at actual alignment width)
-    let alignment_width = app.alignment.width();
+    let alignment_width = alignment.width();
     let available_width = (inner.width as usize)
         .saturating_sub(id_width + 1) // +1 for separator after IDs
         .saturating_sub(tree_display_width);
@@ -276,11 +299,11 @@ fn render_alignment_pane(
 
     // Vertical layout dimensions
     let ruler_height = if app.show_ruler { RULER_HEIGHT } else { 0 };
-    let has_ss_cons = app.alignment.ss_cons().is_some();
+    let has_ss_cons = alignment.ss_cons().is_some();
     let ss_cons_height: u16 = if has_ss_cons { 1 } else { 0 };
-    let has_rf = app.alignment.rf().is_some();
+    let has_rf = alignment.rf().is_some();
     let rf_height: u16 = if app.show_rf_bar && has_rf { 1 } else { 0 };
-    let has_pp_cons = app.alignment.pp_cons().is_some();
+    let has_pp_cons = alignment.pp_cons().is_some();
     let pp_cons_height: u16 = if app.show_pp_cons && has_pp_cons {
         1
     } else {
@@ -335,13 +358,18 @@ fn render_alignment_pane(
         ss_cons_height + rf_height + pp_cons_height + consensus_height + conservation_height;
 
     // Calculate actual sequence rows to display (may be less than visible_rows)
-    let actual_seq_rows =
-        (app.visible_sequence_count().saturating_sub(viewport_row)).min(visible_rows) as u16;
+    let visible_seq_count = if is_secondary && app.secondary_alignment.is_some() {
+        alignment.num_sequences()
+    } else {
+        app.visible_sequence_count()
+    };
+    let actual_seq_rows = (visible_seq_count.saturating_sub(viewport_row)).min(visible_rows) as u16;
 
     // === Render IDs column (with vertical alignment to match sequences) ===
     render_ids_column(
         frame,
         app,
+        alignment,
         ids_area,
         viewport_row,
         visible_rows,
@@ -349,6 +377,7 @@ fn render_alignment_pane(
         ruler_height,
         annotation_height,
         actual_seq_rows,
+        is_secondary,
     );
 
     // === Render separator line ===
@@ -364,6 +393,7 @@ fn render_alignment_pane(
     render_alignment_column(
         frame,
         app,
+        alignment,
         align_area,
         viewport_row,
         viewport_col,
@@ -376,6 +406,7 @@ fn render_alignment_pane(
         consensus_height,
         conservation_height,
         is_active,
+        is_secondary,
     );
 
     // === Render tree column if present ===
@@ -406,6 +437,7 @@ fn render_alignment_pane(
 fn render_ids_column(
     frame: &mut Frame,
     app: &App,
+    alignment: &crate::stockholm::Alignment,
     area: Rect,
     viewport_row: usize,
     visible_rows: usize,
@@ -413,6 +445,7 @@ fn render_ids_column(
     ruler_height: u16,
     annotation_height: u16,
     actual_seq_rows: u16,
+    is_secondary: bool,
 ) {
     // Split to match alignment layout (blank space for ruler/annotation bars)
     let v_chunks = Layout::default()
@@ -432,16 +465,31 @@ fn render_ids_column(
     // Get selection bounds for row highlighting in visual mode
     let selection_bounds = app.get_selection_bounds();
 
-    let mut lines = Vec::new();
-    for display_row in viewport_row..(viewport_row + visible_rows).min(app.visible_sequence_count())
-    {
-        let actual_row = app.display_to_actual_row(display_row);
-        let seq = &app.alignment.sequences[actual_row];
+    // For secondary pane with its own alignment, use simple row indexing
+    let visible_seq_count = if is_secondary && app.secondary_alignment.is_some() {
+        alignment.num_sequences()
+    } else {
+        app.visible_sequence_count()
+    };
 
-        // Check if this row is in the visual selection
-        let is_row_selected = selection_bounds
-            .map(|(min_row, _, max_row, _)| display_row >= min_row && display_row <= max_row)
-            .unwrap_or(false);
+    let mut lines = Vec::new();
+    for display_row in viewport_row..(viewport_row + visible_rows).min(visible_seq_count) {
+        // For secondary pane with its own alignment, display_row == actual_row
+        let actual_row = if is_secondary && app.secondary_alignment.is_some() {
+            display_row
+        } else {
+            app.display_to_actual_row(display_row)
+        };
+        let seq = &alignment.sequences[actual_row];
+
+        // Check if this row is in the visual selection (only for active pane)
+        let is_row_selected = if !is_secondary || app.secondary_alignment.is_none() {
+            selection_bounds
+                .map(|(min_row, _, max_row, _)| display_row >= min_row && display_row <= max_row)
+                .unwrap_or(false)
+        } else {
+            false
+        };
 
         let id_style = if is_row_selected {
             // Selection highlighting takes priority (includes cursor row in visual mode)
@@ -455,7 +503,12 @@ fn render_ids_column(
         };
 
         // Show collapse count if enabled and group has more than 1 member
-        let collapse_count = app.get_collapse_count(display_row);
+        // (collapse only applies to primary pane)
+        let collapse_count = if is_secondary && app.secondary_alignment.is_some() {
+            1
+        } else {
+            app.get_collapse_count(display_row)
+        };
         let id_display = if collapse_count > 1 {
             format!(
                 "{} ({})",
@@ -474,7 +527,7 @@ fn render_ids_column(
     // Render annotation labels using helper
     let mut annotation_lines = Vec::new();
 
-    if app.alignment.ss_cons().is_some() {
+    if alignment.ss_cons().is_some() {
         annotation_lines.push(format_annotation_label(
             "#=GC SS_cons",
             id_formatter,
@@ -482,7 +535,7 @@ fn render_ids_column(
             app.theme.annotations.ss_cons_bg.to_color(),
         ));
     }
-    if app.show_rf_bar && app.alignment.rf().is_some() {
+    if app.show_rf_bar && alignment.rf().is_some() {
         annotation_lines.push(format_annotation_label(
             "#=GC RF",
             id_formatter,
@@ -490,7 +543,7 @@ fn render_ids_column(
             app.theme.annotations.rf_conserved_bg.to_color(),
         ));
     }
-    if app.show_pp_cons && app.alignment.pp_cons().is_some() {
+    if app.show_pp_cons && alignment.pp_cons().is_some() {
         annotation_lines.push(format_annotation_label(
             "#=GC PP_cons",
             id_formatter,
@@ -564,6 +617,7 @@ fn render_separator(
 fn render_alignment_column(
     frame: &mut Frame,
     app: &App,
+    alignment: &crate::stockholm::Alignment,
     area: Rect,
     viewport_row: usize,
     viewport_col: usize,
@@ -576,14 +630,19 @@ fn render_alignment_column(
     consensus_height: u16,
     conservation_height: u16,
     is_active: bool,
+    is_secondary: bool,
 ) {
     // Total annotation bar height
     let annotation_height =
         ss_cons_height + rf_height + pp_cons_height + consensus_height + conservation_height;
 
     // Calculate actual sequence rows to display (may be less than visible_rows)
-    let actual_seq_rows =
-        (app.visible_sequence_count().saturating_sub(viewport_row)).min(visible_rows);
+    let visible_seq_count = if is_secondary && app.secondary_alignment.is_some() {
+        alignment.num_sequences()
+    } else {
+        app.visible_sequence_count()
+    };
+    let actual_seq_rows = (visible_seq_count.saturating_sub(viewport_row)).min(visible_rows);
 
     // Split alignment area vertically: ruler | sequences | annotations | filler
     // Use Length for sequences so annotations follow immediately after
@@ -646,24 +705,30 @@ fn render_alignment_column(
     }
 
     // Compute columns to render (handles hiding gap columns)
-    let cols_to_render: Vec<usize> = if app.hide_gap_columns && !app.visible_columns.is_empty() {
-        // viewport_col is in display column space when hiding
-        app.visible_columns
-            .iter()
-            .skip(viewport_col)
-            .take(seq_width)
-            .copied()
-            .collect()
-    } else {
-        (viewport_col..(viewport_col + seq_width).min(app.alignment.width())).collect()
-    };
+    // For secondary pane, don't use hidden gap column logic
+    let cols_to_render: Vec<usize> =
+        if !is_secondary && app.hide_gap_columns && !app.visible_columns.is_empty() {
+            // viewport_col is in display column space when hiding
+            app.visible_columns
+                .iter()
+                .skip(viewport_col)
+                .take(seq_width)
+                .copied()
+                .collect()
+        } else {
+            (viewport_col..(viewport_col + seq_width).min(alignment.width())).collect()
+        };
 
     // Render sequences
     let mut lines = Vec::new();
-    for display_row in viewport_row..(viewport_row + visible_rows).min(app.visible_sequence_count())
-    {
-        let actual_row = app.display_to_actual_row(display_row);
-        let seq = &app.alignment.sequences[actual_row];
+    for display_row in viewport_row..(viewport_row + visible_rows).min(visible_seq_count) {
+        // For secondary pane with its own alignment, display_row == actual_row
+        let actual_row = if is_secondary && app.secondary_alignment.is_some() {
+            display_row
+        } else {
+            app.display_to_actual_row(display_row)
+        };
+        let seq = &alignment.sequences[actual_row];
         let mut spans = Vec::new();
 
         let seq_chars: Vec<char> = seq.chars().to_vec();
@@ -679,7 +744,7 @@ fn render_alignment_column(
                 ch,
                 col,
                 actual_row,
-                &app.alignment,
+                alignment,
                 &app.structure_cache,
                 &app.gap_chars,
                 app.reference_seq,
@@ -689,7 +754,7 @@ fn render_alignment_column(
             }
 
             // Highlight empty (all-gap) columns if enabled
-            if app.highlight_gap_columns && app.alignment.is_empty_column(col, &app.gap_chars) {
+            if app.highlight_gap_columns && alignment.is_empty_column(col, &app.gap_chars) {
                 style = style.bg(app.theme.selection.gap_column_bg.to_color());
             }
 
@@ -739,7 +804,7 @@ fn render_alignment_column(
     frame.render_widget(paragraph, seq_area);
 
     // Render SS_cons
-    if let Some(ss) = app.alignment.ss_cons() {
+    if let Some(ss) = alignment.ss_cons() {
         let mut spans = Vec::new();
 
         let ss_chars: Vec<char> = ss.chars().collect();
@@ -752,7 +817,7 @@ fn render_alignment_column(
                 .bg(app.theme.annotations.ss_cons_bg.to_color());
 
             // Highlight empty (all-gap) columns if enabled
-            if app.highlight_gap_columns && app.alignment.is_empty_column(col, &app.gap_chars) {
+            if app.highlight_gap_columns && alignment.is_empty_column(col, &app.gap_chars) {
                 style = style.bg(app.theme.selection.gap_column_bg.to_color());
             }
 
@@ -780,11 +845,12 @@ fn render_alignment_column(
 
     // Render RF bar
     if app.show_rf_bar
-        && let Some(rf) = app.alignment.rf()
+        && let Some(rf) = alignment.rf()
     {
         render_rf_bar(
             frame,
             app,
+            alignment,
             rf,
             rf_area,
             &cols_to_render,
@@ -795,11 +861,12 @@ fn render_alignment_column(
 
     // Render PP_cons bar
     if app.show_pp_cons
-        && let Some(pp) = app.alignment.pp_cons()
+        && let Some(pp) = alignment.pp_cons()
     {
         render_pp_cons_bar(
             frame,
             app,
+            alignment,
             pp,
             pp_cons_area,
             &cols_to_render,
@@ -810,12 +877,26 @@ fn render_alignment_column(
 
     // Render consensus bar
     if app.show_consensus {
-        render_consensus_bar(frame, app, consensus_area, &cols_to_render, is_active);
+        render_consensus_bar(
+            frame,
+            app,
+            alignment,
+            consensus_area,
+            &cols_to_render,
+            is_active,
+        );
     }
 
     // Render conservation bar
     if app.show_conservation_bar {
-        render_conservation_bar(frame, app, conservation_area, &cols_to_render, is_active);
+        render_conservation_bar(
+            frame,
+            app,
+            alignment,
+            conservation_area,
+            &cols_to_render,
+            is_active,
+        );
     }
 }
 
@@ -823,6 +904,7 @@ fn render_alignment_column(
 fn render_consensus_bar(
     frame: &mut Frame,
     app: &App,
+    alignment: &crate::stockholm::Alignment,
     area: Rect,
     cols_to_render: &[usize],
     is_active: bool,
@@ -832,12 +914,8 @@ fn render_consensus_bar(
     let mut spans = Vec::new();
 
     for &col in cols_to_render {
-        let ch = get_consensus_char_with_case(
-            col,
-            &app.alignment,
-            &app.gap_chars,
-            app.consensus_threshold,
-        );
+        let ch =
+            get_consensus_char_with_case(col, alignment, &app.gap_chars, app.consensus_threshold);
         let is_cursor_col = is_active && col == app.cursor_col;
 
         let mut style = Style::reset()
@@ -845,7 +923,7 @@ fn render_consensus_bar(
             .bg(app.theme.annotations.consensus_bg.to_color());
 
         // Highlight empty (all-gap) columns if enabled
-        if app.highlight_gap_columns && app.alignment.is_empty_column(col, &app.gap_chars) {
+        if app.highlight_gap_columns && alignment.is_empty_column(col, &app.gap_chars) {
             style = style.bg(app.theme.selection.gap_column_bg.to_color());
         }
 
@@ -864,6 +942,7 @@ fn render_consensus_bar(
 fn render_conservation_bar(
     frame: &mut Frame,
     app: &App,
+    alignment: &crate::stockholm::Alignment,
     area: Rect,
     cols_to_render: &[usize],
     is_active: bool,
@@ -873,7 +952,7 @@ fn render_conservation_bar(
     let mut spans = Vec::new();
 
     for &col in cols_to_render {
-        let conservation = calculate_conservation(col, &app.alignment, &app.gap_chars);
+        let conservation = calculate_conservation(col, alignment, &app.gap_chars);
         let (ch, color) = conservation_to_block(conservation);
         let is_cursor_col = is_active && col == app.cursor_col;
 
@@ -883,7 +962,7 @@ fn render_conservation_bar(
                 .bg(app.theme.annotations.conservation_bg.to_color());
 
         // Highlight empty (all-gap) columns if enabled
-        if app.highlight_gap_columns && app.alignment.is_empty_column(col, &app.gap_chars) {
+        if app.highlight_gap_columns && alignment.is_empty_column(col, &app.gap_chars) {
             style = style.bg(app.theme.selection.gap_column_bg.to_color());
         }
 
@@ -899,9 +978,11 @@ fn render_conservation_bar(
 }
 
 /// Render the RF (reference sequence) bar.
+#[allow(clippy::too_many_arguments)]
 fn render_rf_bar(
     frame: &mut Frame,
     app: &App,
+    alignment: &crate::stockholm::Alignment,
     rf: &str,
     area: Rect,
     cols_to_render: &[usize],
@@ -927,7 +1008,7 @@ fn render_rf_bar(
         };
 
         // Highlight empty (all-gap) columns if enabled
-        if app.highlight_gap_columns && app.alignment.is_empty_column(col, &app.gap_chars) {
+        if app.highlight_gap_columns && alignment.is_empty_column(col, &app.gap_chars) {
             style = style.bg(app.theme.selection.gap_column_bg.to_color());
         }
 
@@ -943,9 +1024,11 @@ fn render_rf_bar(
 }
 
 /// Render the PP_cons (posterior probability consensus) bar.
+#[allow(clippy::too_many_arguments)]
 fn render_pp_cons_bar(
     frame: &mut Frame,
     app: &App,
+    alignment: &crate::stockholm::Alignment,
     pp: &str,
     area: Rect,
     cols_to_render: &[usize],
@@ -967,7 +1050,7 @@ fn render_pp_cons_bar(
             .bg(app.theme.annotations.pp_cons_bg.to_color());
 
         // Highlight empty (all-gap) columns if enabled
-        if app.highlight_gap_columns && app.alignment.is_empty_column(col, &app.gap_chars) {
+        if app.highlight_gap_columns && alignment.is_empty_column(col, &app.gap_chars) {
             style = style.bg(app.theme.selection.gap_column_bg.to_color());
         }
 
@@ -1180,7 +1263,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Mode::Search => Style::default()
             .bg(modes.search_bg.to_color())
             .fg(modes.search_fg.to_color()),
-        Mode::Visual => Style::default()
+        Mode::Visual | Mode::VisualLine => Style::default()
             .bg(modes.visual_bg.to_color())
             .fg(modes.visual_fg.to_color()),
     };

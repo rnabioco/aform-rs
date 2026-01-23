@@ -12,6 +12,7 @@ A terminal-based Stockholm alignment editor for RNA, DNA, and protein sequences.
 - **Secondary structure** visualization and paired-base navigation
 - **Sequence clustering** with dendrogram display (UPGMA)
 - **Collapse identical sequences** to reduce clutter
+- **Split panes** for viewing and extracting sequence subsets
 
 ## Installation
 

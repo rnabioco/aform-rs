@@ -2,6 +2,22 @@
 
 All notable changes to aform-rs will be documented in this file.
 
+## [0.1.0-alpha.11] - 2026-01-23
+
+### Added
+- Visual Line mode (`V`) for selecting whole sequences with annotations
+- Split panes with separate alignments for sequence extraction workflow
+- Yank sequences in Visual Line mode captures complete sub-alignment (#=GS, #=GR, #=GC, #=GF)
+- `:new` command to create empty alignment in split pane
+- `:clipboard` command to inspect clipboard contents
+- Paste (`p`) in secondary pane appends sequences from clipboard
+
+### Fixed
+- Ctrl-w + arrow keys now correctly switches between split panes
+
+### Notes
+- Clustering commands (`:cluster`, `:collapse`, `:tree`) are not supported in secondary pane
+
 ## [0.1.0-alpha.10] - 2026-01-17
 
 ### Added

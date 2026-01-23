@@ -95,6 +95,9 @@ pub enum Mode {
     Search,
     /// Visual block selection mode.
     Visual,
+    /// Visual line selection mode (selects whole rows).
+    #[strum(serialize = "V-LINE")]
+    VisualLine,
 }
 
 /// Color scheme for the alignment display.
@@ -224,11 +227,25 @@ pub struct App {
     /// Secondary pane viewport column.
     pub(crate) secondary_viewport_col: usize,
 
+    // === Secondary alignment (for split pane with separate alignment) ===
+    /// Secondary alignment (when split pane has its own alignment).
+    pub(crate) secondary_alignment: Option<Alignment>,
+    /// Secondary alignment file path.
+    pub(crate) secondary_file_path: Option<PathBuf>,
+    /// Whether the secondary alignment has been modified.
+    pub(crate) secondary_modified: bool,
+    /// Secondary pane cursor row.
+    pub(crate) secondary_cursor_row: usize,
+    /// Secondary pane cursor column.
+    pub(crate) secondary_cursor_col: usize,
+
     // === Visual selection state ===
     /// Selection anchor point (row, col) - set when entering visual mode.
     pub(crate) selection_anchor: Option<(usize, usize)>,
-    /// Clipboard for yanked block (rectangular selection).
-    pub(crate) clipboard: Option<Vec<Vec<char>>>,
+    /// Clipboard for yanked content (can be block or complete sequences with annotations).
+    pub(crate) clipboard: Option<Alignment>,
+    /// Whether the clipboard contains line-wise yanked sequences (vs block).
+    pub(crate) clipboard_is_linewise: bool,
 
     // === Clustering state ===
     /// Cluster-based display ordering (indices into alignment.sequences).
@@ -317,8 +334,14 @@ impl Default for App {
             active_pane: ActivePane::Primary,
             secondary_viewport_row: 0,
             secondary_viewport_col: 0,
+            secondary_alignment: None,
+            secondary_file_path: None,
+            secondary_modified: false,
+            secondary_cursor_row: 0,
+            secondary_cursor_col: 0,
             selection_anchor: None,
             clipboard: None,
+            clipboard_is_linewise: false,
             cluster_order: None,
             cluster_tree: None,
             collapsed_tree: None,
@@ -406,6 +429,41 @@ impl App {
         self.modified = false;
         self.set_status(format!("Saved {}", path.display()));
         Ok(())
+    }
+
+    /// Save the active alignment (primary or secondary pane).
+    pub fn save_active_file(&mut self) -> Result<(), String> {
+        if self.active_pane == ActivePane::Secondary
+            && let Some(ref secondary) = self.secondary_alignment
+        {
+            let path = self
+                .secondary_file_path
+                .as_ref()
+                .ok_or("No file path set for secondary pane")?;
+            crate::stockholm::writer::write_file(secondary, path)
+                .map_err(|e| format!("Failed to save file: {e}"))?;
+            self.secondary_modified = false;
+            self.set_status(format!("Saved {}", path.display()));
+            Ok(())
+        } else {
+            self.save_file()
+        }
+    }
+
+    /// Save the active alignment to a new file.
+    pub fn save_active_file_as(&mut self, path: PathBuf) -> Result<(), String> {
+        if self.active_pane == ActivePane::Secondary
+            && let Some(ref secondary) = self.secondary_alignment
+        {
+            crate::stockholm::writer::write_file(secondary, &path)
+                .map_err(|e| format!("Failed to save file: {e}"))?;
+            self.secondary_file_path = Some(path.clone());
+            self.secondary_modified = false;
+            self.set_status(format!("Saved {}", path.display()));
+            Ok(())
+        } else {
+            self.save_file_as(path)
+        }
     }
 
     /// Set a status message.
@@ -634,6 +692,12 @@ impl App {
         self.selection_anchor = Some((self.cursor_row, self.cursor_col));
     }
 
+    /// Enter visual line selection mode (selects whole rows).
+    pub fn enter_visual_line_mode(&mut self) {
+        self.mode = Mode::VisualLine;
+        self.selection_anchor = Some((self.cursor_row, self.cursor_col));
+    }
+
     /// Exit visual mode without taking action.
     pub fn exit_visual_mode(&mut self) {
         self.mode = Mode::Normal;
@@ -642,18 +706,27 @@ impl App {
 
     /// Get the bounds of the current selection (`min_row`, `min_col`, `max_row`, `max_col`).
     /// Returns None if not in visual mode or no anchor set.
+    /// For VisualLine mode, returns full row width (0 to alignment.width()-1).
     pub fn get_selection_bounds(&self) -> Option<(usize, usize, usize, usize)> {
         let (anchor_row, anchor_col) = self.selection_anchor?;
         let min_row = anchor_row.min(self.cursor_row);
         let max_row = anchor_row.max(self.cursor_row);
-        let min_col = anchor_col.min(self.cursor_col);
-        let max_col = anchor_col.max(self.cursor_col);
-        Some((min_row, min_col, max_row, max_col))
+
+        // VisualLine mode selects entire rows
+        if self.mode == Mode::VisualLine {
+            let min_col = 0;
+            let max_col = self.alignment.width().saturating_sub(1);
+            Some((min_row, min_col, max_row, max_col))
+        } else {
+            let min_col = anchor_col.min(self.cursor_col);
+            let max_col = anchor_col.max(self.cursor_col);
+            Some((min_row, min_col, max_row, max_col))
+        }
     }
 
     /// Check if a cell is within the current selection.
     pub fn is_selected(&self, row: usize, col: usize) -> bool {
-        if self.mode != Mode::Visual {
+        if self.mode != Mode::Visual && self.mode != Mode::VisualLine {
             return false;
         }
         if let Some((min_row, min_col, max_row, max_col)) = self.get_selection_bounds() {
@@ -665,36 +738,108 @@ impl App {
 
     /// Get selection dimensions as a string for status bar.
     pub fn selection_info(&self) -> Option<String> {
-        if self.mode != Mode::Visual {
+        if self.mode != Mode::Visual && self.mode != Mode::VisualLine {
             return None;
         }
         let (min_row, min_col, max_row, max_col) = self.get_selection_bounds()?;
         let rows = max_row - min_row + 1;
         let cols = max_col - min_col + 1;
-        Some(format!("{rows}x{cols}"))
+        if self.mode == Mode::VisualLine {
+            Some(format!("{rows} lines"))
+        } else {
+            Some(format!("{rows}x{cols}"))
+        }
     }
 
-    /// Yank (copy) the selected block to clipboard.
+    /// Yank (copy) the selected content to clipboard.
+    /// In Visual mode, yanks a rectangular block of characters.
+    /// In VisualLine mode, yanks complete sequences with all annotations.
     pub fn yank_selection(&mut self) {
+        if self.mode == Mode::VisualLine {
+            self.yank_sequences();
+        } else {
+            self.yank_block();
+        }
+    }
+
+    /// Yank a rectangular block of characters (Visual mode).
+    fn yank_block(&mut self) {
         let Some((min_row, min_col, max_row, max_col)) = self.get_selection_bounds() else {
             return;
         };
 
-        let mut block = Vec::new();
-        for row in min_row..=max_row {
-            if let Some(seq) = self.alignment.sequences.get(row) {
-                let chars: Vec<char> = (min_col..=max_col)
+        // Create an alignment containing just the block data
+        let mut block_alignment = Alignment::new();
+
+        for display_row in min_row..=max_row {
+            let actual_row = self.display_to_actual_row(display_row);
+            if let Some(seq) = self.alignment.sequences.get(actual_row) {
+                let chars: String = (min_col..=max_col)
                     .map(|col| seq.get(col).unwrap_or(self.gap_char))
                     .collect();
-                block.push(chars);
+                // Use a placeholder ID for block yanks
+                let block_seq =
+                    crate::stockholm::Sequence::new(format!("__block_{}", display_row), chars);
+                block_alignment.sequences.push(std::rc::Rc::new(block_seq));
             }
         }
 
-        let rows = block.len();
-        let cols = if block.is_empty() { 0 } else { block[0].len() };
-        self.clipboard = Some(block);
+        let rows = block_alignment.sequences.len();
+        let cols = block_alignment.width();
+        self.clipboard = Some(block_alignment);
+        self.clipboard_is_linewise = false;
         self.exit_visual_mode();
         self.set_status(format!("Yanked {rows}x{cols} block"));
+    }
+
+    /// Yank complete sequences with all annotations (VisualLine mode).
+    fn yank_sequences(&mut self) {
+        let Some((min_row, _, max_row, _)) = self.get_selection_bounds() else {
+            return;
+        };
+
+        let mut sub_alignment = Alignment::new();
+
+        // Copy #=GF file annotations
+        sub_alignment.file_annotations = self.alignment.file_annotations.clone();
+
+        // Copy #=GC column annotations (full width)
+        sub_alignment.column_annotations = self.alignment.column_annotations.clone();
+
+        // Collect selected sequences with their annotations
+        for display_row in min_row..=max_row {
+            let actual_row = self.display_to_actual_row(display_row);
+            if let Some(seq) = self.alignment.sequences.get(actual_row) {
+                // Clone the sequence
+                sub_alignment.sequences.push(seq.clone());
+
+                let seq_id = &seq.id;
+
+                // Copy #=GS annotations for this sequence
+                if let Some(gs_anns) = self.alignment.sequence_annotations.get(seq_id) {
+                    sub_alignment
+                        .sequence_annotations
+                        .insert(seq_id.clone(), gs_anns.clone());
+                }
+
+                // Copy #=GR annotations for this sequence
+                if let Some(gr_anns) = self.alignment.residue_annotations.get(seq_id) {
+                    sub_alignment
+                        .residue_annotations
+                        .insert(seq_id.clone(), gr_anns.clone());
+                }
+            }
+        }
+
+        let num_seqs = sub_alignment.sequences.len();
+        let total_seqs = self.alignment.num_sequences();
+        self.clipboard = Some(sub_alignment);
+        self.clipboard_is_linewise = true;
+        self.exit_visual_mode();
+        self.set_status(format!(
+            "Yanked {} of {} sequence(s) [linewise]",
+            num_seqs, total_seqs
+        ));
     }
 
     /// Delete the selected block (replace with gaps).
@@ -727,9 +872,24 @@ impl App {
     }
 
     /// Paste the clipboard at the cursor position.
+    /// For block pastes, replaces characters in place.
+    /// For line-wise pastes, appends sequences after the cursor row.
     pub fn paste(&mut self) {
-        let Some(ref block) = self.clipboard else {
+        if self.clipboard.is_none() {
             self.set_status("Nothing to paste");
+            return;
+        }
+
+        if self.clipboard_is_linewise {
+            self.paste_sequences();
+        } else {
+            self.paste_block();
+        }
+    }
+
+    /// Paste a block of characters at the cursor position.
+    fn paste_block(&mut self) {
+        let Some(ref clipboard) = self.clipboard else {
             return;
         };
 
@@ -737,24 +897,73 @@ impl App {
         self.history
             .save(&self.alignment, self.cursor_row, self.cursor_col);
 
-        let block = block.clone();
-        for (row_offset, row_data) in block.iter().enumerate() {
+        let clipboard = clipboard.clone();
+        for (row_offset, seq) in clipboard.sequences.iter().enumerate() {
             let target_row = self.cursor_row + row_offset;
-            if let Some(seq_rc) = self.alignment.sequences.get_mut(target_row) {
-                let seq = std::rc::Rc::make_mut(seq_rc);
-                for (col_offset, &ch) in row_data.iter().enumerate() {
+            let actual_row = self.display_to_actual_row(target_row);
+            if let Some(seq_rc) = self.alignment.sequences.get_mut(actual_row) {
+                let target_seq = std::rc::Rc::make_mut(seq_rc);
+                for (col_offset, ch) in seq.chars().iter().enumerate() {
                     let target_col = self.cursor_col + col_offset;
-                    if target_col < seq.len() {
-                        seq.set(target_col, ch);
+                    if target_col < target_seq.len() {
+                        target_seq.set(target_col, *ch);
                     }
                 }
             }
         }
 
-        let rows = block.len();
-        let cols = if block.is_empty() { 0 } else { block[0].len() };
+        let rows = clipboard.sequences.len();
+        let cols = clipboard.width();
         self.modified = true;
         self.set_status(format!("Pasted {rows}x{cols} block"));
+    }
+
+    /// Paste sequences after the cursor row (for line-wise paste).
+    fn paste_sequences(&mut self) {
+        let Some(ref clipboard) = self.clipboard else {
+            return;
+        };
+
+        // Save for undo
+        self.history
+            .save(&self.alignment, self.cursor_row, self.cursor_col);
+
+        let clipboard = clipboard.clone();
+        let num_seqs = clipboard.sequences.len();
+
+        // Insert sequences after the current cursor row
+        let insert_pos = self.display_to_actual_row(self.cursor_row) + 1;
+        let insert_pos = insert_pos.min(self.alignment.sequences.len());
+
+        for (i, seq) in clipboard.sequences.iter().enumerate() {
+            let pos = insert_pos + i;
+            self.alignment.sequences.insert(pos, seq.clone());
+
+            // Also copy annotations for this sequence
+            let seq_id = &seq.id;
+            if let Some(gs_anns) = clipboard.sequence_annotations.get(seq_id) {
+                self.alignment
+                    .sequence_annotations
+                    .insert(seq_id.clone(), gs_anns.clone());
+            }
+            if let Some(gr_anns) = clipboard.residue_annotations.get(seq_id) {
+                self.alignment
+                    .residue_annotations
+                    .insert(seq_id.clone(), gr_anns.clone());
+            }
+        }
+
+        self.modified = true;
+
+        // Recompute collapse groups if collapse is enabled
+        self.precompute_collapse_groups();
+
+        // Recompute clustering if active
+        if self.cluster_order.is_some() {
+            self.cluster_sequences();
+        }
+
+        self.set_status(format!("Pasted {} sequence(s)", num_seqs));
     }
 
     /// Clear search highlighting.
@@ -974,7 +1183,11 @@ impl App {
     fn execute_file_command(&mut self, parts: &[&str], command: &str) -> bool {
         match parts {
             ["q" | "quit"] => {
-                if self.split_mode.is_some() {
+                // In secondary pane with own alignment, close secondary
+                if self.active_pane == ActivePane::Secondary && self.secondary_alignment.is_some() {
+                    self.close_split();
+                } else if self.split_mode.is_some() {
+                    // In viewport-only split, close split
                     self.close_split();
                 } else if self.modified {
                     self.set_status("No write since last change (use :q! to force)");
@@ -985,30 +1198,39 @@ impl App {
             }
             ["q!"] => {
                 if self.split_mode.is_some() {
-                    self.close_split();
+                    self.force_close_split();
                 } else {
                     self.should_quit = true;
                 }
                 true
             }
             ["w" | "write"] => {
-                if let Err(e) = self.save_file() {
+                if let Err(e) = self.save_active_file() {
                     self.set_status(e);
                 }
                 true
             }
             ["w", path] => {
-                if let Err(e) = self.save_file_as(PathBuf::from(*path)) {
+                if let Err(e) = self.save_active_file_as(PathBuf::from(*path)) {
                     self.set_status(e);
                 }
                 true
             }
             ["wq"] => {
-                if let Err(e) = self.save_file() {
+                if let Err(e) = self.save_active_file() {
                     self.set_status(e);
+                } else if self.active_pane == ActivePane::Secondary
+                    && self.secondary_alignment.is_some()
+                {
+                    // Close secondary pane after saving
+                    self.force_close_split();
                 } else {
                     self.should_quit = true;
                 }
+                true
+            }
+            ["new"] => {
+                self.new_secondary();
                 true
             }
             ["e" | "edit"] => {
@@ -1023,6 +1245,28 @@ impl App {
             }
             ["noh" | "nohlsearch"] => {
                 self.clear_search();
+                true
+            }
+            ["clipboard" | "clip"] => {
+                // Debug command to show clipboard contents
+                let info = match &self.clipboard {
+                    Some(clip) => {
+                        let mode = if self.clipboard_is_linewise {
+                            "linewise"
+                        } else {
+                            "block"
+                        };
+                        format!(
+                            "Clipboard: {} seq(s), {}x{} [{}]",
+                            clip.sequences.len(),
+                            clip.sequences.len(),
+                            clip.width(),
+                            mode
+                        )
+                    }
+                    None => "Clipboard: empty".to_string(),
+                };
+                self.set_status(info);
                 true
             }
             _ if command.starts_with('!') => {
@@ -1256,11 +1500,19 @@ impl App {
 
     /// Execute clustering-related commands. Returns true if handled.
     fn execute_clustering_command(&mut self, parts: &[&str]) -> bool {
+        // Clustering is not supported in secondary pane with its own alignment
+        if self.active_pane == ActivePane::Secondary && self.secondary_alignment.is_some() {
+            self.set_status("Clustering not supported in secondary pane");
+            return matches!(parts, ["cluster"] | ["uncluster"] | ["tree"] | ["collapse"]);
+        }
+
         match parts {
             ["cluster"] => {
                 self.cluster_sequences();
+                // Auto-show tree so user can see sequences were reordered
+                self.show_tree = true;
                 self.set_status(format!(
-                    "Clustered {} sequences by similarity",
+                    "Clustered {} sequences by similarity (tree visible)",
                     self.alignment.num_sequences()
                 ));
                 true
@@ -1293,31 +1545,144 @@ impl App {
     }
 
     /// Enable horizontal split (top/bottom panes).
+    /// If clipboard contains line-wise yanked sequences, create secondary alignment with that data.
     pub fn horizontal_split(&mut self) {
-        if self.split_mode.is_none() {
-            // Initialize secondary viewport to current position
-            self.secondary_viewport_row = self.viewport_row;
-            self.secondary_viewport_col = self.viewport_col;
-        }
-        self.split_mode = Some(SplitMode::Horizontal);
-        self.set_status("Horizontal split");
+        self.do_split(SplitMode::Horizontal);
     }
 
     /// Enable vertical split (left/right panes).
+    /// If clipboard contains line-wise yanked sequences, create secondary alignment with that data.
     pub fn vertical_split(&mut self) {
-        if self.split_mode.is_none() {
+        self.do_split(SplitMode::Vertical);
+    }
+
+    /// Internal split implementation.
+    fn do_split(&mut self, mode: SplitMode) {
+        let is_new_split = self.split_mode.is_none();
+
+        if is_new_split {
             // Initialize secondary viewport to current position
             self.secondary_viewport_row = self.viewport_row;
             self.secondary_viewport_col = self.viewport_col;
+            self.secondary_cursor_row = 0;
+            self.secondary_cursor_col = 0;
+
+            // If clipboard has line-wise alignment, use it for secondary
+            if self.clipboard_is_linewise
+                && let Some(ref clipboard) = self.clipboard
+                && !clipboard.sequences.is_empty()
+            {
+                self.secondary_alignment = Some(clipboard.clone());
+                self.secondary_file_path = None;
+                self.secondary_modified = false;
+                self.secondary_viewport_row = 0;
+                self.secondary_viewport_col = 0;
+                // Switch to secondary pane
+                self.active_pane = ActivePane::Secondary;
+                std::mem::swap(&mut self.viewport_row, &mut self.secondary_viewport_row);
+                std::mem::swap(&mut self.viewport_col, &mut self.secondary_viewport_col);
+                std::mem::swap(&mut self.cursor_row, &mut self.secondary_cursor_row);
+                std::mem::swap(&mut self.cursor_col, &mut self.secondary_cursor_col);
+            }
         }
-        self.split_mode = Some(SplitMode::Vertical);
-        self.set_status("Vertical split");
+
+        self.split_mode = Some(mode);
+
+        let status = if self.secondary_alignment.is_some() {
+            let num_seqs = self
+                .secondary_alignment
+                .as_ref()
+                .map(|a| a.num_sequences())
+                .unwrap_or(0);
+            format!(
+                "{} split with {} sequence(s)",
+                if mode == SplitMode::Horizontal {
+                    "Horizontal"
+                } else {
+                    "Vertical"
+                },
+                num_seqs
+            )
+        } else {
+            format!(
+                "{} split",
+                if mode == SplitMode::Horizontal {
+                    "Horizontal"
+                } else {
+                    "Vertical"
+                }
+            )
+        };
+        self.set_status(status);
+    }
+
+    /// Create a new empty alignment in secondary pane.
+    pub fn new_secondary(&mut self) {
+        self.secondary_alignment = Some(Alignment::new());
+        self.secondary_file_path = None;
+        self.secondary_modified = false;
+        self.secondary_viewport_row = 0;
+        self.secondary_viewport_col = 0;
+        self.secondary_cursor_row = 0;
+        self.secondary_cursor_col = 0;
+
+        // Open in horizontal split if not already split
+        if self.split_mode.is_none() {
+            self.split_mode = Some(SplitMode::Horizontal);
+        }
+
+        // Switch to secondary pane
+        self.active_pane = ActivePane::Secondary;
+        std::mem::swap(&mut self.viewport_row, &mut self.secondary_viewport_row);
+        std::mem::swap(&mut self.viewport_col, &mut self.secondary_viewport_col);
+        std::mem::swap(&mut self.cursor_row, &mut self.secondary_cursor_row);
+        std::mem::swap(&mut self.cursor_col, &mut self.secondary_cursor_col);
+
+        self.set_status("New alignment in secondary pane");
     }
 
     /// Close split and return to single pane.
     pub fn close_split(&mut self) {
-        self.split_mode = None;
-        self.active_pane = ActivePane::Primary;
+        // If we're in secondary pane with its own alignment, just close secondary
+        if self.active_pane == ActivePane::Secondary && self.secondary_alignment.is_some() {
+            // Check for unsaved changes
+            if self.secondary_modified {
+                self.set_status("No write since last change in secondary (use :q! to force)");
+                return;
+            }
+            // Clear secondary alignment and switch to primary
+            self.secondary_alignment = None;
+            self.secondary_file_path = None;
+            self.secondary_modified = false;
+            self.active_pane = ActivePane::Primary;
+            std::mem::swap(&mut self.viewport_row, &mut self.secondary_viewport_row);
+            std::mem::swap(&mut self.viewport_col, &mut self.secondary_viewport_col);
+            std::mem::swap(&mut self.cursor_row, &mut self.secondary_cursor_row);
+            std::mem::swap(&mut self.cursor_col, &mut self.secondary_cursor_col);
+        }
+
+        // Close the split mode entirely if no secondary alignment remains
+        if self.secondary_alignment.is_none() {
+            self.split_mode = None;
+        }
+        self.set_status("Split closed");
+    }
+
+    /// Force close split, discarding any unsaved changes.
+    pub fn force_close_split(&mut self) {
+        if self.active_pane == ActivePane::Secondary && self.secondary_alignment.is_some() {
+            self.secondary_alignment = None;
+            self.secondary_file_path = None;
+            self.secondary_modified = false;
+            self.active_pane = ActivePane::Primary;
+            std::mem::swap(&mut self.viewport_row, &mut self.secondary_viewport_row);
+            std::mem::swap(&mut self.viewport_col, &mut self.secondary_viewport_col);
+            std::mem::swap(&mut self.cursor_row, &mut self.secondary_cursor_row);
+            std::mem::swap(&mut self.cursor_col, &mut self.secondary_cursor_col);
+        }
+        if self.secondary_alignment.is_none() {
+            self.split_mode = None;
+        }
         self.set_status("Split closed");
     }
 
@@ -1329,9 +1694,72 @@ impl App {
                 ActivePane::Primary => ActivePane::Secondary,
                 ActivePane::Secondary => ActivePane::Primary,
             };
-            // Swap cursor into the other viewport
+            // Swap viewport positions
             std::mem::swap(&mut self.viewport_row, &mut self.secondary_viewport_row);
             std::mem::swap(&mut self.viewport_col, &mut self.secondary_viewport_col);
+            // Swap cursor positions
+            std::mem::swap(&mut self.cursor_row, &mut self.secondary_cursor_row);
+            std::mem::swap(&mut self.cursor_col, &mut self.secondary_cursor_col);
+        }
+    }
+
+    /// Check if the secondary pane has its own alignment.
+    #[allow(dead_code)] // API for future use
+    pub fn has_secondary_alignment(&self) -> bool {
+        self.secondary_alignment.is_some()
+    }
+
+    /// Get a reference to the active alignment.
+    #[allow(dead_code)] // API for future use
+    pub fn active_alignment(&self) -> &Alignment {
+        if self.active_pane == ActivePane::Secondary
+            && let Some(ref secondary) = self.secondary_alignment
+        {
+            secondary
+        } else {
+            &self.alignment
+        }
+    }
+
+    /// Get a mutable reference to the active alignment.
+    #[allow(dead_code)] // API for future use
+    pub fn active_alignment_mut(&mut self) -> &mut Alignment {
+        if self.active_pane == ActivePane::Secondary
+            && let Some(ref mut secondary) = self.secondary_alignment
+        {
+            secondary
+        } else {
+            &mut self.alignment
+        }
+    }
+
+    /// Check if the active alignment is modified.
+    #[allow(dead_code)] // API for future use
+    pub fn is_active_modified(&self) -> bool {
+        if self.active_pane == ActivePane::Secondary && self.secondary_alignment.is_some() {
+            self.secondary_modified
+        } else {
+            self.modified
+        }
+    }
+
+    /// Mark the active alignment as modified.
+    #[allow(dead_code)] // API for future use
+    pub fn mark_active_modified(&mut self) {
+        if self.active_pane == ActivePane::Secondary && self.secondary_alignment.is_some() {
+            self.secondary_modified = true;
+        } else {
+            self.modified = true;
+        }
+    }
+
+    /// Get the file path for the active pane.
+    #[allow(dead_code)] // API for future use
+    pub fn active_file_path(&self) -> Option<&PathBuf> {
+        if self.active_pane == ActivePane::Secondary && self.secondary_alignment.is_some() {
+            self.secondary_file_path.as_ref()
+        } else {
+            self.file_path.as_ref()
         }
     }
 
