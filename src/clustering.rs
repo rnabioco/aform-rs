@@ -111,8 +111,19 @@ pub fn cluster_sequences_with_collapse(
     let num_unique = collapse_groups.len();
 
     // If no duplicates or trivial case, use standard clustering
+    // but still produce group_order so collapse+cluster works correctly
     if num_unique == n || n <= 1 {
-        return cluster_sequences_with_tree(sequences, gap_chars);
+        let mut result = cluster_sequences_with_tree(sequences, gap_chars);
+        // Map each sequence index back to its group index
+        // When all sequences are unique, group i contains sequence collapse_groups[i].0
+        // So we need: for each position in order, find which group that sequence belongs to
+        let mut seq_to_group = vec![0usize; n];
+        for (group_idx, (rep, _)) in collapse_groups.iter().enumerate() {
+            seq_to_group[*rep] = group_idx;
+        }
+        result.group_order = Some(result.order.iter().map(|&seq_idx| seq_to_group[seq_idx]).collect());
+        result.collapsed_tree_lines = Some(result.tree_lines.clone());
+        return result;
     }
 
     // Edge case: only one unique sequence (all identical)
