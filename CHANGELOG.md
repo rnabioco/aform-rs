@@ -2,7 +2,7 @@
 
 All notable changes to aform-rs will be documented in this file.
 
-## [Unreleased]
+## [0.1.0-alpha.12] - 2026-01-27
 
 ### Added
 - Auto-configure display for protein alignments: base coloring, consensus, and conservation bar are enabled automatically on file load
