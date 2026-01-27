@@ -30,7 +30,7 @@ Display consensus sequence and conservation levels below the alignment.
 
 ### Protein Support
 
-Auto-detects protein sequences and applies amino acid coloring (Taylor scheme).
+Auto-detects protein sequences and enables amino acid coloring (Taylor scheme), consensus, and conservation bar automatically.
 
 ![Protein alignment](images/protein.gif)
 
@@ -51,8 +51,8 @@ aform alignment.stk
 # With structure coloring
 aform --color structure alignment.stk
 
-# With amino acid coloring for proteins
-aform --color protein alignment.stk
+# Protein files auto-enable coloring, consensus, and conservation
+aform protein.stk
 ```
 
 Press `?` for help within the editor.

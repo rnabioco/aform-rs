@@ -157,13 +157,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Err(e) = app.load_file(&path) {
             app.set_status(format!("Error: {}", e));
         } else {
-            // Auto-detect sequence type and precompute collapse groups
-            app.detect_sequence_type();
-            app.precompute_collapse_groups();
-
-            // Auto-enable structure coloring for RNA files with SS_cons
-            if args.color == "none" && app.alignment.ss_cons().is_some() {
-                app.color_scheme = app::ColorScheme::Structure;
+            // Auto-enable coloring when no explicit --color was given
+            if args.color == "none" {
+                app.auto_configure_display();
             }
         }
     }

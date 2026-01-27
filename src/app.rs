@@ -1240,6 +1240,8 @@ impl App {
             ["e" | "edit", path] => {
                 if let Err(e) = self.load_file(Path::new(path)) {
                     self.set_status(e);
+                } else {
+                    self.auto_configure_display();
                 }
                 true
             }
@@ -1926,6 +1928,31 @@ impl App {
         }
     }
 
+    /// Physically reorder sequences to match the current cluster display order,
+    /// then clear clustering state. This "bakes in" the cluster order so that
+    /// subsequent index-based operations (like deletion) work correctly without
+    /// needing to recluster.
+    pub fn materialize_cluster_order(&mut self) {
+        if let Some(order) = self.cluster_order.take() {
+            let old_seqs = self.alignment.sequences.clone();
+            self.alignment.sequences = order
+                .into_iter()
+                .filter(|&i| i < old_seqs.len())
+                .map(|i| old_seqs[i].clone())
+                .collect();
+        }
+        self.cluster_tree = None;
+        self.collapsed_tree = None;
+        self.tree_width = 0;
+        self.show_tree = false;
+        self.cluster_group_order = None;
+
+        // Refresh collapse groups since sequence indices changed
+        if self.collapse_identical {
+            self.precompute_collapse_groups();
+        }
+    }
+
     /// Disable clustering and restore original order.
     pub fn uncluster(&mut self) {
         self.cluster_order = None;
@@ -2034,6 +2061,19 @@ impl App {
     /// Detect sequence type from alignment content.
     pub fn detect_sequence_type(&mut self) {
         self.sequence_type = crate::color::detect_sequence_type(&self.alignment, &self.gap_chars);
+    }
+
+    /// Auto-configure display settings based on detected sequence type.
+    /// For protein: enable base coloring, consensus, and conservation bar.
+    /// For RNA/DNA with SS_cons: enable structure coloring.
+    pub fn auto_configure_display(&mut self) {
+        if self.sequence_type == crate::stockholm::SequenceType::Protein {
+            self.color_scheme = ColorScheme::Base;
+            self.show_consensus = true;
+            self.show_conservation_bar = true;
+        } else if self.alignment.ss_cons().is_some() {
+            self.color_scheme = ColorScheme::Structure;
+        }
     }
 
     // === Gap column methods ===

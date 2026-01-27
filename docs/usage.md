@@ -143,7 +143,7 @@ The `base` scheme automatically uses nucleotide colors for RNA/DNA or amino acid
 
 ## Sequence Type
 
-aform-rs auto-detects the sequence type (RNA, DNA, or Protein) when loading a file. You can also manually set it:
+aform-rs auto-detects the sequence type (RNA, DNA, or Protein) when loading a file. Protein alignments automatically enable base coloring, consensus, and conservation bar. RNA/DNA alignments with SS_cons automatically enable structure coloring. You can also manually set the type:
 
 | Command | Description |
 |---------|-------------|

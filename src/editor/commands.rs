@@ -228,7 +228,11 @@ impl App {
 
         self.save_undo_state();
 
-        // Translate display row to actual sequence index (for clustering support)
+        // Materialize cluster order before deletion so indices are straightforward
+        if self.cluster_order.is_some() {
+            self.materialize_cluster_order();
+        }
+
         let actual_row = self.display_to_actual_row(self.cursor_row);
 
         let seq_id = self.alignment.sequences[actual_row].id.clone();
@@ -240,12 +244,6 @@ impl App {
 
         self.mark_modified();
         self.clamp_cursor();
-
-        // Recompute clustering if active (indices become stale after deletion)
-        if self.cluster_order.is_some() {
-            self.precompute_collapse_groups(); // Refresh group indices first
-            self.cluster_sequences();
-        }
     }
 
     /// Delete all sequences in the current visual selection.
@@ -260,23 +258,25 @@ impl App {
 
         self.save_undo_state();
 
-        // Collect actual row indices for all selected display rows
-        let mut actual_rows: Vec<usize> = (min_row..=max_row)
-            .map(|display_row| self.display_to_actual_row(display_row))
+        // Materialize cluster order before deletion so display rows map directly
+        if self.cluster_order.is_some() {
+            self.materialize_cluster_order();
+        }
+
+        // Map display rows to actual sequence indices
+        let actual_indices: Vec<usize> = (min_row..=max_row)
+            .map(|r| self.display_to_actual_row(r))
             .collect();
+        let count = actual_indices.len();
 
-        // Sort in reverse order to delete from end first (preserves earlier indices)
-        actual_rows.sort_unstable();
-        actual_rows.dedup();
-        actual_rows.reverse();
-
-        let count = actual_rows.len();
-
-        // Delete each sequence
-        for actual_row in actual_rows {
-            if actual_row < self.alignment.sequences.len() {
-                let seq_id = self.alignment.sequences[actual_row].id.clone();
-                self.alignment.sequences.remove(actual_row);
+        // Delete in reverse sorted order to preserve earlier indices
+        let mut sorted_indices = actual_indices;
+        sorted_indices.sort_unstable();
+        sorted_indices.dedup();
+        for row in sorted_indices.into_iter().rev() {
+            if row < self.alignment.sequences.len() {
+                let seq_id = self.alignment.sequences[row].id.clone();
+                self.alignment.sequences.remove(row);
                 self.alignment.sequence_annotations.remove(&seq_id);
                 self.alignment.residue_annotations.remove(&seq_id);
             }
@@ -285,12 +285,6 @@ impl App {
         self.mark_modified();
         self.exit_visual_mode();
         self.clamp_cursor();
-
-        // Recompute clustering if active
-        if self.cluster_order.is_some() {
-            self.precompute_collapse_groups();
-            self.cluster_sequences();
-        }
 
         self.set_status(format!("Deleted {count} sequence(s)"));
     }
