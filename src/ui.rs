@@ -216,15 +216,16 @@ fn render_alignment_pane(
     is_secondary: bool,
 ) {
     // Get the alignment and file info for this pane
-    let (alignment, file_path, modified) = if is_secondary && app.secondary_alignment.is_some() {
-        (
-            app.secondary_alignment.as_ref().unwrap(),
-            app.secondary_file_path.as_ref(),
-            app.secondary_modified,
-        )
-    } else {
-        (&app.alignment, app.file_path.as_ref(), app.modified)
-    };
+    let (alignment, file_path, modified) =
+        if let (true, Some(sec)) = (is_secondary, app.secondary_alignment.as_ref()) {
+            (
+                sec,
+                app.secondary_file_path.as_ref(),
+                app.secondary_modified,
+            )
+        } else {
+            (&app.alignment, app.file_path.as_ref(), app.modified)
+        };
 
     // Build title with file info and optional pane label
     let file_info = format!(
