@@ -1,0 +1,1477 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Terminal-based Stockholm alignment editor with vim-style modal editing">
+      
+      
+      
+        <link rel="canonical" href="https://rnabioco.github.io/aform-rs/usage/">
+      
+      
+        <link rel="prev" href="../installation/">
+      
+      
+        <link rel="next" href="../configuration/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="zensical-0.0.23">
+    
+    
+      
+        <title>Usage - aform-rs</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../assets/stylesheets/modern/main.1e989742.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../assets/stylesheets/modern/palette.dfe2e883.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,500,500i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="cyan">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#usage" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="./.." title="aform-rs" class="md-header__button md-logo" aria-label="aform-rs" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            aform-rs
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Usage
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="cyan"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="cyan"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/rnabioco/aform-rs" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    rnabioco/aform-rs
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="./.." title="aform-rs" class="md-nav__button md-logo" aria-label="aform-rs" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+
+    </a>
+    aform-rs
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/rnabioco/aform-rs" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    rnabioco/aform-rs
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="./.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Usage
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#opening-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opening Files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Modes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-bindings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Bindings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Key Bindings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#navigation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Navigation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#editing-insert-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Editing (Insert Mode)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#visual-mode-block-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visual Mode (Block Selection)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#visual-line-mode-sequence-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visual Line Mode (Sequence Selection)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#split-panes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Split Panes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Commands
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#clustering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clustering
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#color-schemes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Color Schemes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sequence-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sequence Type
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#annotation-bars" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Annotation Bars
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#collapse-identical-sequences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Collapse Identical Sequences
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#split-panes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Split Panes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Split Panes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#basic-splits-viewport-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Basic Splits (Viewport Only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extracting-sequences-to-a-new-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extracting Sequences to a New File
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Workflow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#split-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Split Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#opening-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opening Files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Modes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-bindings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Bindings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Key Bindings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#navigation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Navigation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#editing-insert-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Editing (Insert Mode)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#visual-mode-block-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visual Mode (Block Selection)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#visual-line-mode-sequence-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visual Line Mode (Sequence Selection)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#split-panes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Split Panes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Commands
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#clustering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clustering
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#color-schemes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Color Schemes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sequence-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sequence Type
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#annotation-bars" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Annotation Bars
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#collapse-identical-sequences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Collapse Identical Sequences
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#split-panes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Split Panes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Split Panes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#basic-splits-viewport-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Basic Splits (Viewport Only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extracting-sequences-to-a-new-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extracting Sequences to a New File
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Workflow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#split-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Split Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+  
+  
+
+
+<h1 id="usage">Usage</h1>
+<h2 id="opening-files">Opening Files</h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>aform<span class="w"> </span>alignment.stk
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>aform<span class="w"> </span>--color<span class="w"> </span>structure<span class="w"> </span>alignment.stk
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>aform<span class="w"> </span>--cluster<span class="w"> </span>--tree<span class="w"> </span>--conservation<span class="w"> </span>alignment.stk
+</code></pre></div>
+<p>Use <code>:e &lt;path&gt;</code> to open files from within the editor (Tab completes paths).</p>
+<h2 id="modes">Modes</h2>
+<p>aform-rs uses vim-style modal editing:</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Enter</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Normal</td>
+<td><code>Esc</code></td>
+<td>Navigation and commands</td>
+</tr>
+<tr>
+<td>Insert</td>
+<td><code>i</code></td>
+<td>Edit sequence characters</td>
+</tr>
+<tr>
+<td>Visual</td>
+<td><code>v</code></td>
+<td>Block selection</td>
+</tr>
+<tr>
+<td>Visual Line</td>
+<td><code>V</code></td>
+<td>Row selection (whole sequences)</td>
+</tr>
+<tr>
+<td>Command</td>
+<td><code>:</code></td>
+<td>Ex-style commands</td>
+</tr>
+<tr>
+<td>Search</td>
+<td><code>/</code></td>
+<td>Pattern search</td>
+</tr>
+</tbody>
+</table>
+<h2 id="key-bindings">Key Bindings</h2>
+<h3 id="navigation">Navigation</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>h/j/k/l</code></td>
+<td>Move cursor</td>
+</tr>
+<tr>
+<td><code>0</code> / <code>$</code></td>
+<td>Line start/end</td>
+</tr>
+<tr>
+<td><code>gg</code> / <code>G</code></td>
+<td>First/last sequence</td>
+</tr>
+<tr>
+<td><code>Ctrl-f/b</code></td>
+<td>Page down/up</td>
+</tr>
+<tr>
+<td><code>Ctrl-d/u</code></td>
+<td>Half page down/up</td>
+</tr>
+<tr>
+<td><code>w</code> / <code>b</code></td>
+<td>Jump 10 columns right/left</td>
+</tr>
+</tbody>
+</table>
+<h3 id="editing-insert-mode">Editing (Insert Mode)</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>a-z</code>, <code>A-Z</code></td>
+<td>Insert nucleotide</td>
+</tr>
+<tr>
+<td><code>-</code>, <code>.</code></td>
+<td>Insert gap</td>
+</tr>
+<tr>
+<td><code>Backspace</code></td>
+<td>Delete character</td>
+</tr>
+</tbody>
+</table>
+<h3 id="visual-mode-block-selection">Visual Mode (Block Selection)</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>v</code></td>
+<td>Enter visual mode (block selection)</td>
+</tr>
+<tr>
+<td><code>y</code></td>
+<td>Yank (copy) selection</td>
+</tr>
+<tr>
+<td><code>d</code> / <code>x</code></td>
+<td>Delete selection</td>
+</tr>
+<tr>
+<td><code>Esc</code></td>
+<td>Exit visual mode</td>
+</tr>
+</tbody>
+</table>
+<p>In Normal mode, <code>p</code> pastes the yanked block at the cursor position, replacing characters in place.</p>
+<h3 id="visual-line-mode-sequence-selection">Visual Line Mode (Sequence Selection)</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>V</code></td>
+<td>Enter visual line mode (selects whole rows)</td>
+</tr>
+<tr>
+<td><code>j</code> / <code>k</code></td>
+<td>Extend selection up/down</td>
+</tr>
+<tr>
+<td><code>y</code></td>
+<td>Yank selected sequences (with all annotations)</td>
+</tr>
+<tr>
+<td><code>d</code></td>
+<td>Delete selected sequences</td>
+</tr>
+<tr>
+<td><code>Esc</code></td>
+<td>Exit visual mode</td>
+</tr>
+</tbody>
+</table>
+<p>Visual Line mode (<code>V</code>) selects complete sequences including their IDs and all annotations (#=GS, #=GR). When you yank with <code>y</code>, the clipboard contains a complete sub-alignment that can be used to create a new split pane (see Split Panes below).</p>
+<h3 id="structure">Structure</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>gp</code></td>
+<td>Go to base pair partner</td>
+</tr>
+<tr>
+<td><code>[</code> / <code>]</code></td>
+<td>Previous/next helix</td>
+</tr>
+</tbody>
+</table>
+<h3 id="split-panes">Split Panes</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Ctrl-w s</code></td>
+<td>Horizontal split</td>
+</tr>
+<tr>
+<td><code>Ctrl-w v</code></td>
+<td>Vertical split</td>
+</tr>
+<tr>
+<td><code>Ctrl-w w</code></td>
+<td>Switch between panes</td>
+</tr>
+<tr>
+<td><code>Ctrl-w</code> + arrow</td>
+<td>Switch between panes</td>
+</tr>
+<tr>
+<td><code>Ctrl-w q</code></td>
+<td>Close current pane</td>
+</tr>
+</tbody>
+</table>
+<h2 id="commands">Commands</h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>:w</code></td>
+<td>Save file</td>
+</tr>
+<tr>
+<td><code>:q</code></td>
+<td>Quit</td>
+</tr>
+<tr>
+<td><code>:wq</code></td>
+<td>Save and quit</td>
+</tr>
+<tr>
+<td><code>:e &lt;path&gt;</code></td>
+<td>Open file (Tab completes path)</td>
+</tr>
+<tr>
+<td><code>:color &lt;scheme&gt;</code></td>
+<td>Set color scheme</td>
+</tr>
+<tr>
+<td><code>:trim</code></td>
+<td>Remove gap-only columns (both ends)</td>
+</tr>
+<tr>
+<td><code>:trimleft</code></td>
+<td>Remove leading gap-only columns</td>
+</tr>
+<tr>
+<td><code>:trimright</code></td>
+<td>Remove trailing gap-only columns</td>
+</tr>
+<tr>
+<td><code>:upper</code></td>
+<td>Convert to uppercase</td>
+</tr>
+<tr>
+<td><code>:lower</code></td>
+<td>Convert to lowercase</td>
+</tr>
+<tr>
+<td><code>:t2u</code></td>
+<td>Convert T to U</td>
+</tr>
+<tr>
+<td><code>:u2t</code></td>
+<td>Convert U to T</td>
+</tr>
+<tr>
+<td><code>:noh</code></td>
+<td>Clear search highlighting</td>
+</tr>
+<tr>
+<td><code>:cluster</code></td>
+<td>Cluster sequences by similarity</td>
+</tr>
+<tr>
+<td><code>:uncluster</code></td>
+<td>Restore original sequence order</td>
+</tr>
+<tr>
+<td><code>:tree</code></td>
+<td>Toggle dendrogram tree display</td>
+</tr>
+<tr>
+<td><code>:collapse</code></td>
+<td>Toggle collapse of identical sequences</td>
+</tr>
+<tr>
+<td><code>:consensus</code></td>
+<td>Toggle consensus sequence bar</td>
+</tr>
+<tr>
+<td><code>:conservation</code></td>
+<td>Toggle conservation level bar</td>
+</tr>
+<tr>
+<td><code>:ruler</code></td>
+<td>Toggle column ruler</td>
+</tr>
+<tr>
+<td><code>:rownum</code></td>
+<td>Toggle row numbers</td>
+</tr>
+<tr>
+<td><code>:shortid</code></td>
+<td>Toggle short IDs (strip /start-end suffix)</td>
+</tr>
+<tr>
+<td><code>:type &lt;type&gt;</code></td>
+<td>Set sequence type (rna/dna/protein/auto)</td>
+</tr>
+<tr>
+<td><code>:split</code></td>
+<td>Horizontal split (uses clipboard if linewise yank)</td>
+</tr>
+<tr>
+<td><code>:vsplit</code></td>
+<td>Vertical split (uses clipboard if linewise yank)</td>
+</tr>
+<tr>
+<td><code>:new</code></td>
+<td>Create new empty alignment in split pane</td>
+</tr>
+<tr>
+<td><code>:only</code></td>
+<td>Close split, keep current pane</td>
+</tr>
+<tr>
+<td><code>:clipboard</code></td>
+<td>Show clipboard contents (for debugging)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="clustering">Clustering</h2>
+<p>Cluster sequences by pairwise similarity using <code>:cluster</code>. This reorders sequences using hierarchical agglomerative clustering (UPGMA algorithm with Hamming distance), grouping similar sequences together.</p>
+<p>Use <code>:tree</code> to show a dendrogram alongside the alignment, visualizing sequence relationships. The tree uses ASCII box-drawing characters and adapts to your terminal's color scheme.</p>
+<p>To restore the original sequence order, use <code>:uncluster</code>.</p>
+<h2 id="color-schemes">Color Schemes</h2>
+<p>Set with <code>:color &lt;scheme&gt;</code> or <code>--color</code> flag.</p>
+<table>
+<thead>
+<tr>
+<th>Scheme</th>
+<th>Aliases</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>none</code></td>
+<td><code>off</code></td>
+<td>No coloring</td>
+</tr>
+<tr>
+<td><code>structure</code></td>
+<td><code>ss</code></td>
+<td>Color by helix (rainbow)</td>
+</tr>
+<tr>
+<td><code>base</code></td>
+<td><code>nt</code>, <code>protein</code>, <code>aa</code>, <code>residue</code></td>
+<td>Color by nucleotide or amino acid</td>
+</tr>
+<tr>
+<td><code>conservation</code></td>
+<td><code>cons</code></td>
+<td>Color by column conservation</td>
+</tr>
+<tr>
+<td><code>compensatory</code></td>
+<td><code>comp</code></td>
+<td>Highlight compensatory mutations</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>base</code> scheme automatically uses nucleotide colors for RNA/DNA or amino acid colors (Taylor scheme) for protein sequences based on auto-detection.</p>
+<p><img alt="Color schemes comparison" src="../images/color-schemes.gif" /></p>
+<h2 id="sequence-type">Sequence Type</h2>
+<p>aform-rs auto-detects the sequence type (RNA, DNA, or Protein) when loading a file. Protein alignments automatically enable base coloring, consensus, and conservation bar. RNA/DNA alignments with SS_cons automatically enable structure coloring. You can also manually set the type:</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>:type</code></td>
+<td>Show current sequence type</td>
+</tr>
+<tr>
+<td><code>:type rna</code></td>
+<td>Set to RNA</td>
+</tr>
+<tr>
+<td><code>:type dna</code></td>
+<td>Set to DNA</td>
+</tr>
+<tr>
+<td><code>:type protein</code></td>
+<td>Set to Protein</td>
+</tr>
+<tr>
+<td><code>:type auto</code></td>
+<td>Auto-detect from alignment</td>
+</tr>
+</tbody>
+</table>
+<h2 id="annotation-bars">Annotation Bars</h2>
+<p>Toggle annotation bars below the alignment:</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>:consensus</code></td>
+<td>Show consensus sequence (uppercase = high conservation)</td>
+</tr>
+<tr>
+<td><code>:conservation</code></td>
+<td>Show conservation level with height-varying bars (▁▂▃▄▅▆▇█)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="collapse-identical-sequences">Collapse Identical Sequences</h2>
+<p>Use <code>:collapse</code> to group identical sequences together, showing only one representative with a count indicator (e.g., <code>seq1 (5)</code> means 5 identical sequences). This reduces visual clutter in alignments with many duplicates.</p>
+<h2 id="split-panes_1">Split Panes</h2>
+<p>aform-rs supports vim-style split panes for viewing and extracting sequences.</p>
+<h3 id="basic-splits-viewport-only">Basic Splits (Viewport Only)</h3>
+<p>Use <code>Ctrl-w s</code> (horizontal) or <code>Ctrl-w v</code> (vertical) to split the view. Both panes show the same alignment with independent scroll positions. Use <code>Ctrl-w w</code> or <code>Ctrl-w</code> + arrow keys to switch between panes.</p>
+<h3 id="extracting-sequences-to-a-new-file">Extracting Sequences to a New File</h3>
+<p>The real power of splits comes from combining Visual Line mode with splits to extract a subset of sequences:</p>
+<ol>
+<li><strong>Select sequences</strong> - Navigate to the first sequence you want, press <code>V</code> to enter Visual Line mode, then use <code>j</code>/<code>k</code> to extend the selection</li>
+<li><strong>Yank</strong> - Press <code>y</code> to copy. You'll see "Yanked X of Y sequence(s) [linewise]"</li>
+<li><strong>Split</strong> - Type <code>:split</code> or <code>:vsplit</code>. The new pane opens with only the yanked sequences</li>
+<li><strong>Save</strong> - In the new pane, type <code>:w subset.sto</code> to save the extracted sequences</li>
+</ol>
+<p>The yanked sub-alignment includes:
+- Selected sequences with their IDs
+- All #=GS annotations for those sequences
+- All #=GR annotations for those sequences
+- All #=GC column annotations (SS_cons, RF, etc.)
+- All #=GF file annotations</p>
+<h3 id="example-workflow">Example Workflow</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a># Open a large alignment
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>aform alignment.sto
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a># Navigate to row 10
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>10G
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a># Enter Visual Line mode
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>V
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a># Select rows 10-15
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>5j
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a># Yank the 6 sequences
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>y
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a># Create split with yanked sequences
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>:split
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a># (Now in secondary pane with 6 sequences)
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a># Save to new file
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>:w subset.sto
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a># Close the split and return to original
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>:q
+</code></pre></div>
+<h3 id="split-commands">Split Commands</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>:split</code> / <code>:sp</code></td>
+<td>Horizontal split</td>
+</tr>
+<tr>
+<td><code>:vsplit</code> / <code>:vs</code></td>
+<td>Vertical split</td>
+</tr>
+<tr>
+<td><code>:new</code></td>
+<td>Create empty alignment in new split</td>
+</tr>
+<tr>
+<td><code>:only</code></td>
+<td>Close all splits</td>
+</tr>
+<tr>
+<td><code>:q</code></td>
+<td>Close current pane (or quit if no split)</td>
+</tr>
+<tr>
+<td><code>:w &lt;path&gt;</code></td>
+<td>Save current pane's alignment</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      
+      <script id="__config" type="application/json">{"annotate":null,"base":"..","features":["content.code.copy","navigation.sections"],"search":"../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.5fcf0de6.min.js"></script>
+      
+    
+  </body>
+</html>
