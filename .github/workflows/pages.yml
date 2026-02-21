@@ -18,5 +18,12 @@ jobs:
         with:
           environments: docs
 
+      - name: Build docs
+        run: pixi run -e docs docs-build
+
       - name: Deploy to gh-pages
-        run: pixi run -e docs zensical gh-deploy --force
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          force_orphan: true
