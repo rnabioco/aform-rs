@@ -2,6 +2,19 @@
 
 All notable changes to aform-rs will be documented in this file.
 
+## [0.1.0] - 2026-04-15
+
+### Added
+- SVG export command (`:svg <path>`) for saving alignment views as SVG images
+- Light mode support for base colors and popup overlays
+
+### Changed
+- Migrated docs from mkdocs to zensical via pixi
+- Switched to peaceiris/actions-gh-pages for deployment
+
+### Fixed
+- Clippy unnecessary_unwrap and formatting issues
+
 ## [0.1.0-alpha.12] - 2026-01-27
 
 ### Added
