@@ -101,7 +101,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     // Render help overlay if active
     if app.show_help {
-        render_help(frame);
+        render_help(frame, app);
     }
 
     // Render info overlay if active
@@ -750,6 +750,7 @@ fn render_alignment_column(
                 &app.gap_chars,
                 app.reference_seq,
                 app.sequence_type,
+                app.terminal_theme,
             ) {
                 style = style.bg(color).fg(Color::Black);
             }
@@ -1568,7 +1569,7 @@ fn render_splash(frame: &mut Frame, area: Rect) {
 }
 
 /// Render help overlay.
-fn render_help(frame: &mut Frame) {
+fn render_help(frame: &mut Frame, app: &App) {
     let help_text = vec![
         Line::from(Span::styled(
             "aform-rs Help",
@@ -1660,14 +1661,17 @@ fn render_help(frame: &mut Frame) {
     // Clear the area and render popup
     frame.render_widget(Clear, popup_area);
 
+    let popup_bg = app.theme.misc.popup_bg.to_color();
+    let popup_border = app.theme.misc.popup_border.to_color();
+
     let help_block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
-        .style(Style::default().bg(Color::Black));
+        .border_style(Style::default().fg(popup_border))
+        .style(Style::default().bg(popup_bg));
 
     let help_paragraph = Paragraph::new(help_text)
         .block(help_block)
-        .style(Style::default().bg(Color::Black));
+        .style(Style::default().bg(popup_bg));
 
     frame.render_widget(help_paragraph, popup_area);
 }
@@ -1755,14 +1759,17 @@ fn render_info(frame: &mut Frame, app: &App) {
     // Clear the area and render popup
     frame.render_widget(Clear, popup_area);
 
+    let popup_bg = app.theme.misc.popup_bg.to_color();
+    let popup_border = app.theme.misc.popup_border.to_color();
+
     let info_block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Green))
-        .style(Style::default().bg(Color::Black));
+        .border_style(Style::default().fg(popup_border))
+        .style(Style::default().bg(popup_bg));
 
     let info_paragraph = Paragraph::new(lines)
         .block(info_block)
-        .style(Style::default().bg(Color::Black));
+        .style(Style::default().bg(popup_bg));
 
     frame.render_widget(info_paragraph, popup_area);
 }

@@ -474,6 +474,8 @@ pub struct MiscColors {
     pub separator: Rgb,
     pub tree_dark_theme: Rgb,
     pub tree_light_theme: Rgb,
+    pub popup_bg: Rgb,
+    pub popup_border: Rgb,
 }
 
 impl Default for MiscColors {
@@ -482,6 +484,8 @@ impl Default for MiscColors {
             separator: Rgb::new(128, 128, 128),       // DarkGray
             tree_dark_theme: Rgb::new(255, 255, 255), // White
             tree_light_theme: Rgb::new(0, 0, 0),      // Black
+            popup_bg: Rgb::new(0, 0, 0),              // Black
+            popup_border: Rgb::new(0, 255, 255),      // Cyan
         }
     }
 }
@@ -493,6 +497,8 @@ impl MiscColors {
             separator: Rgb::new(100, 100, 100),       // Gray
             tree_dark_theme: Rgb::new(255, 255, 255), // White (unchanged)
             tree_light_theme: Rgb::new(0, 0, 0),      // Black (unchanged)
+            popup_bg: Rgb::new(255, 255, 255),        // White
+            popup_border: Rgb::new(0, 100, 150),      // Dark cyan
         }
     }
 }

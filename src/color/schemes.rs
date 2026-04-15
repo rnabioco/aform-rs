@@ -2,7 +2,7 @@
 
 use ratatui::style::Color;
 
-use crate::app::ColorScheme;
+use crate::app::{ColorScheme, TerminalTheme};
 use crate::stockholm::{Alignment, SequenceType};
 use crate::structure::{CompensatoryChange, StructureCache, analyze_compensatory};
 
@@ -144,11 +144,12 @@ pub fn get_color(
     gap_chars: &[char],
     reference_seq: usize,
     sequence_type: SequenceType,
+    terminal_theme: TerminalTheme,
 ) -> Option<Color> {
     match scheme {
         ColorScheme::None => None,
         ColorScheme::Structure => get_structure_color(col, cache),
-        ColorScheme::Base => get_base_color(ch, gap_chars, sequence_type),
+        ColorScheme::Base => get_base_color(ch, gap_chars, sequence_type, terminal_theme),
         ColorScheme::Conservation => get_conservation_color(col, alignment, gap_chars),
         ColorScheme::Compensatory => {
             get_compensatory_color(col, row, alignment, cache, gap_chars, reference_seq)
@@ -166,12 +167,21 @@ fn get_structure_color(col: usize, cache: &StructureCache) -> Option<Color> {
 
 /// Background color for gap characters in base coloring mode.
 const BASE_GAP_COLOR: Color = Color::Rgb(40, 40, 40); // dark gray
+const BASE_GAP_COLOR_LIGHT: Color = Color::Rgb(220, 220, 220); // light gray
 
 /// Get color based on base/amino acid identity.
-fn get_base_color(ch: char, gap_chars: &[char], sequence_type: SequenceType) -> Option<Color> {
-    // Check if gap character - use dark gray background
+fn get_base_color(
+    ch: char,
+    gap_chars: &[char],
+    sequence_type: SequenceType,
+    terminal_theme: TerminalTheme,
+) -> Option<Color> {
+    // Check if gap character - use theme-appropriate gray background
     if gap_chars.contains(&ch) {
-        return Some(BASE_GAP_COLOR);
+        return Some(match terminal_theme {
+            TerminalTheme::Light => BASE_GAP_COLOR_LIGHT,
+            TerminalTheme::Dark => BASE_GAP_COLOR,
+        });
     }
 
     match sequence_type {
@@ -445,19 +455,28 @@ mod tests {
     fn test_base_colors() {
         let gap_chars = ['.', '-'];
         // RNA bases
-        assert!(get_base_color('A', &gap_chars, SequenceType::RNA).is_some());
-        assert!(get_base_color('C', &gap_chars, SequenceType::RNA).is_some());
-        assert!(get_base_color('G', &gap_chars, SequenceType::RNA).is_some());
-        assert!(get_base_color('U', &gap_chars, SequenceType::RNA).is_some());
+        assert!(get_base_color('A', &gap_chars, SequenceType::RNA, TerminalTheme::Dark).is_some());
+        assert!(get_base_color('C', &gap_chars, SequenceType::RNA, TerminalTheme::Dark).is_some());
+        assert!(get_base_color('G', &gap_chars, SequenceType::RNA, TerminalTheme::Dark).is_some());
+        assert!(get_base_color('U', &gap_chars, SequenceType::RNA, TerminalTheme::Dark).is_some());
         // DNA bases
-        assert!(get_base_color('T', &gap_chars, SequenceType::DNA).is_some());
+        assert!(get_base_color('T', &gap_chars, SequenceType::DNA, TerminalTheme::Dark).is_some());
         // Protein amino acids
-        assert!(get_base_color('M', &gap_chars, SequenceType::Protein).is_some());
-        assert!(get_base_color('W', &gap_chars, SequenceType::Protein).is_some());
-        // Gaps return dark gray background
+        assert!(
+            get_base_color('M', &gap_chars, SequenceType::Protein, TerminalTheme::Dark).is_some()
+        );
+        assert!(
+            get_base_color('W', &gap_chars, SequenceType::Protein, TerminalTheme::Dark).is_some()
+        );
+        // Gaps return dark gray background in dark mode
         assert_eq!(
-            get_base_color('.', &gap_chars, SequenceType::RNA),
+            get_base_color('.', &gap_chars, SequenceType::RNA, TerminalTheme::Dark),
             Some(Color::Rgb(40, 40, 40))
+        );
+        // Gaps return light gray background in light mode
+        assert_eq!(
+            get_base_color('.', &gap_chars, SequenceType::RNA, TerminalTheme::Light),
+            Some(Color::Rgb(220, 220, 220))
         );
     }
 
