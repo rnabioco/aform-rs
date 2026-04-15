@@ -12,6 +12,7 @@ mod history;
 mod input;
 mod stockholm;
 mod structure;
+mod svg;
 mod ui;
 
 use std::io;
@@ -114,6 +115,9 @@ COLOR SCHEMES:
   :color compensatory Color by compensatory mutations (requires SS_cons)
 
   Aliases: ss=structure, nt/residue/aa/protein=base, cons=conservation, comp=compensatory
+
+EXPORT:
+  :svg <path>         Export alignment as SVG image
 ";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

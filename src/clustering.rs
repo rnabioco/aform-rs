@@ -121,7 +121,13 @@ pub fn cluster_sequences_with_collapse(
         for (group_idx, (rep, _)) in collapse_groups.iter().enumerate() {
             seq_to_group[*rep] = group_idx;
         }
-        result.group_order = Some(result.order.iter().map(|&seq_idx| seq_to_group[seq_idx]).collect());
+        result.group_order = Some(
+            result
+                .order
+                .iter()
+                .map(|&seq_idx| seq_to_group[seq_idx])
+                .collect(),
+        );
         result.collapsed_tree_lines = Some(result.tree_lines.clone());
         return result;
     }

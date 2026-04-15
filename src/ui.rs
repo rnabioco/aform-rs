@@ -1642,6 +1642,7 @@ fn render_help(frame: &mut Frame, app: &App) {
         Line::from("  :cluster    Cluster sequences by similarity"),
         Line::from("  :uncluster  Restore original order"),
         Line::from("  :tree       Toggle dendrogram tree"),
+        Line::from("  :svg <path> Export as SVG image"),
         Line::from("  :help       Show this help"),
         Line::from(""),
         Line::from(Span::styled(

@@ -1170,6 +1170,9 @@ impl App {
         if self.execute_clustering_command(&parts) {
             return;
         }
+        if self.execute_export_command(&parts) {
+            return;
+        }
 
         // Fallback: check for line number or unknown command
         if let Ok(line_num) = command.parse::<usize>() {
@@ -1535,6 +1538,20 @@ impl App {
             }
             ["collapse"] => {
                 self.toggle_collapse_identical();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Execute export-related commands. Returns true if handled.
+    fn execute_export_command(&mut self, parts: &[&str]) -> bool {
+        match parts {
+            ["svg", path] => {
+                match crate::svg::export_svg(self, Path::new(path)) {
+                    Ok(()) => self.set_status(format!("Exported SVG to {path}")),
+                    Err(e) => self.set_status(format!("SVG export failed: {e}")),
+                }
                 true
             }
             _ => false,

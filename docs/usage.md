@@ -116,6 +116,7 @@ Visual Line mode (`V`) selects complete sequences including their IDs and all an
 | `:new` | Create new empty alignment in split pane |
 | `:only` | Close split, keep current pane |
 | `:clipboard` | Show clipboard contents (for debugging) |
+| `:svg <path>` | Export alignment as SVG image |
 
 ## Clustering
 
@@ -229,3 +230,19 @@ y
 | `:only` | Close all splits |
 | `:q` | Close current pane (or quit if no split) |
 | `:w <path>` | Save current pane's alignment |
+
+## SVG Export
+
+Export the current alignment view as an SVG image using `:svg <path>`. The export renders the alignment exactly as displayed in the terminal, including:
+
+- Active color scheme
+- Annotation bars (SS_cons, RF, PP_cons, consensus, conservation)
+- Ruler and row numbers (if enabled)
+- Short IDs and collapse counts (if enabled)
+- Gap column visibility settings
+
+The exported SVG uses monospace text and adapts to your current terminal theme (light/dark).
+
+```
+:svg alignment.svg
+```
