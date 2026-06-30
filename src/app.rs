@@ -288,6 +288,17 @@ pub struct App {
     /// Show file info overlay.
     pub show_info: bool,
 
+    // === Multiple alignments ===
+    /// All alignments loaded from the current file (a Stockholm file may hold
+    /// several). The active `alignment` is the working copy of `alignments[current_alignment]`.
+    pub alignments: Vec<Alignment>,
+    /// Index of the currently displayed alignment within `alignments`.
+    pub current_alignment: usize,
+    /// Show the MSA selection overlay.
+    pub show_msa_picker: bool,
+    /// Highlighted entry in the MSA selection overlay.
+    pub msa_picker_selection: usize,
+
     // === Sequence type ===
     /// Detected sequence type (RNA, DNA, or Protein).
     pub sequence_type: SequenceType,
@@ -358,6 +369,10 @@ impl Default for App {
             show_pp_cons: false,
             consensus_threshold: 0.7,
             show_info: false,
+            alignments: Vec::new(),
+            current_alignment: 0,
+            show_msa_picker: false,
+            msa_picker_selection: 0,
             sequence_type: SequenceType::RNA,
             highlight_gap_columns: false,
             hide_gap_columns: false,
@@ -374,11 +389,45 @@ impl App {
 
     /// Load an alignment from a file.
     pub fn load_file(&mut self, path: &Path) -> Result<(), String> {
-        let alignment = crate::stockholm::parser::parse_file(path)
+        let alignments = crate::stockholm::parser::parse_all_file(path)
             .map_err(|e| format!("Failed to parse file: {e}"))?;
 
-        self.alignment = alignment;
+        if alignments.is_empty() {
+            return Err("No alignments found in file".to_string());
+        }
+
+        self.alignments = alignments;
         self.file_path = Some(path.to_path_buf());
+        self.activate_alignment(0);
+
+        let count = self.alignments.len();
+        if count > 1 {
+            self.set_status(format!(
+                "Loaded {} ({} alignments; showing 1/{} — :msa to switch)",
+                path.display(),
+                count,
+                count
+            ));
+        } else {
+            self.set_status(format!(
+                "Loaded {} ({} seqs, {:?}, SS_cons: {})",
+                path.display(),
+                self.alignment.num_sequences(),
+                self.sequence_type,
+                self.alignment.ss_cons().is_some()
+            ));
+        }
+        Ok(())
+    }
+
+    /// Make `alignments[index]` the active alignment, resetting view/edit state.
+    ///
+    /// Does not preserve edits to the previously active alignment; callers that
+    /// need to keep edits should use [`Self::select_alignment`].
+    fn activate_alignment(&mut self, index: usize) {
+        debug_assert!(index < self.alignments.len());
+        self.alignment = self.alignments[index].clone();
+        self.current_alignment = index;
         self.modified = false;
         self.cursor_row = 0;
         self.cursor_col = 0;
@@ -386,49 +435,147 @@ impl App {
         self.viewport_col = 0;
         self.history.clear();
 
-        // Reset collapse state
+        // Reset collapse and clustering state for the new alignment.
         self.collapse_identical = false;
         self.collapse_groups.clear();
+        self.cluster_order = None;
+        self.cluster_tree = None;
+        self.collapsed_tree = None;
+        self.cluster_group_order = None;
+        self.show_tree = false;
 
         // Update structure cache (warn on parse errors)
         if let Some(ss) = self.alignment.ss_cons()
             && let Err(e) = self.structure_cache.update(ss)
         {
             eprintln!("Warning: Failed to parse SS_cons structure: {e}");
+        } else if self.alignment.ss_cons().is_none() {
+            self.structure_cache = StructureCache::new();
         }
 
         // Detect sequence type and precompute collapse groups
         self.detect_sequence_type();
         self.precompute_collapse_groups();
-
-        self.set_status(format!(
-            "Loaded {} ({} seqs, {:?}, SS_cons: {})",
-            path.display(),
-            self.alignment.num_sequences(),
-            self.sequence_type,
-            self.alignment.ss_cons().is_some()
-        ));
-        Ok(())
     }
 
-    /// Save the alignment to a file.
+    /// Switch the displayed alignment to `index`, preserving in-session edits to
+    /// the alignment being left behind. No-op if `index` is out of range or
+    /// already active.
+    pub fn select_alignment(&mut self, index: usize) {
+        if index >= self.alignments.len() {
+            self.set_status(format!(
+                "No alignment {} (file has {})",
+                index + 1,
+                self.alignments.len()
+            ));
+            return;
+        }
+        if index == self.current_alignment {
+            return;
+        }
+
+        // Commit the current working copy back into the in-memory list so edits
+        // are not lost when switching away and back.
+        let current = self.current_alignment;
+        self.alignments[current] = self.alignment.clone();
+
+        self.activate_alignment(index);
+        self.auto_configure_display();
+        self.set_status(format!(
+            "Alignment {}/{}{}",
+            index + 1,
+            self.alignments.len(),
+            self.alignment
+                .get_file_annotation("ID")
+                .map(|id| format!(": {id}"))
+                .unwrap_or_default()
+        ));
+    }
+
+    /// A short, human-readable label for the alignment at `index` (its #=GF ID
+    /// or AC, falling back to a positional name).
+    pub fn alignment_label(&self, index: usize) -> String {
+        let Some(alignment) = self.alignments.get(index) else {
+            return format!("Alignment {}", index + 1);
+        };
+        let name = alignment
+            .get_file_annotation("ID")
+            .or_else(|| alignment.get_file_annotation("AC"))
+            .map(str::to_string);
+        match name {
+            Some(name) => name,
+            None => format!("Alignment {}", index + 1),
+        }
+    }
+
+    /// Open the interactive MSA selection overlay (only meaningful when more
+    /// than one alignment is loaded).
+    pub fn open_msa_picker(&mut self) {
+        if self.alignments.len() <= 1 {
+            self.set_status("Only one alignment in this file");
+            return;
+        }
+        self.msa_picker_selection = self.current_alignment;
+        self.show_msa_picker = true;
+    }
+
+    /// Move the MSA picker highlight by `delta`, clamping to range.
+    pub fn msa_picker_move(&mut self, delta: isize) {
+        let len = self.alignments.len();
+        if len == 0 {
+            return;
+        }
+        let new = (self.msa_picker_selection as isize)
+            .saturating_add(delta)
+            .clamp(0, len as isize - 1);
+        self.msa_picker_selection = new as usize;
+    }
+
+    /// Confirm the MSA picker selection and close the overlay.
+    pub fn msa_picker_confirm(&mut self) {
+        self.show_msa_picker = false;
+        self.select_alignment(self.msa_picker_selection);
+    }
+
+    /// Commit the active working copy back into the in-memory alignment list so
+    /// that a save reflects edits to the current alignment.
+    fn commit_active_alignment(&mut self) {
+        if let Some(slot) = self.alignments.get_mut(self.current_alignment) {
+            *slot = self.alignment.clone();
+        }
+    }
+
+    /// Save the alignment(s) to a file.
+    ///
+    /// When the file holds multiple alignments, all of them are written back so
+    /// switching between and editing alignments does not drop the others.
     pub fn save_file(&mut self) -> Result<(), String> {
-        let path = self.file_path.as_ref().ok_or("No file path set")?;
-        crate::stockholm::writer::write_file(&self.alignment, path)
-            .map_err(|e| format!("Failed to save file: {e}"))?;
+        let path = self.file_path.as_ref().ok_or("No file path set")?.clone();
+        self.write_all_to(&path)?;
         self.modified = false;
         self.set_status(format!("Saved {}", path.display()));
         Ok(())
     }
 
-    /// Save the alignment to a new file.
+    /// Save the alignment(s) to a new file.
     pub fn save_file_as(&mut self, path: PathBuf) -> Result<(), String> {
-        crate::stockholm::writer::write_file(&self.alignment, &path)
-            .map_err(|e| format!("Failed to save file: {e}"))?;
+        self.write_all_to(&path)?;
         self.file_path = Some(path.clone());
         self.modified = false;
         self.set_status(format!("Saved {}", path.display()));
         Ok(())
+    }
+
+    /// Write the full set of loaded alignments (with current edits committed) to
+    /// `path`, falling back to just the active alignment if the list is empty.
+    fn write_all_to(&mut self, path: &Path) -> Result<(), String> {
+        self.commit_active_alignment();
+        let result = if self.alignments.is_empty() {
+            crate::stockholm::writer::write_file(&self.alignment, path)
+        } else {
+            crate::stockholm::writer::write_all_file(&self.alignments, path)
+        };
+        result.map_err(|e| format!("Failed to save file: {e}"))
     }
 
     /// Save the active alignment (primary or secondary pane).
@@ -1245,6 +1392,26 @@ impl App {
                     self.set_status(e);
                 } else {
                     self.auto_configure_display();
+                }
+                true
+            }
+            ["msa" | "aln" | "alignment"] => {
+                // No argument: open the interactive picker, or report status.
+                if self.alignments.len() <= 1 {
+                    self.set_status(format!(
+                        "Alignment 1/{} (single alignment in file)",
+                        self.alignments.len().max(1)
+                    ));
+                } else {
+                    self.open_msa_picker();
+                }
+                true
+            }
+            ["msa" | "aln" | "alignment", which] => {
+                match which.parse::<usize>() {
+                    // 1-based index from the user.
+                    Ok(n) if n >= 1 => self.select_alignment(n - 1),
+                    _ => self.set_status(format!("Invalid alignment number: {which}")),
                 }
                 true
             }
@@ -2135,5 +2302,77 @@ impl App {
         } else {
             self.alignment.width()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    const MULTI: &str = "# STOCKHOLM 1.0\n#=GF ID first\nseqA ACGU\nseqB ACGU\n//\n\
+                         # STOCKHOLM 1.0\n#=GF ID second\nseqC GGGCCC\nseqD GGG..C\n//\n";
+
+    fn write_temp(name: &str, contents: &str) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!("aform_{}_{}.stk", name, std::process::id()));
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(contents.as_bytes()).unwrap();
+        path
+    }
+
+    #[test]
+    fn test_load_multi_alignment() {
+        let path = write_temp("load", MULTI);
+        let mut app = App::new();
+        app.load_file(&path).unwrap();
+
+        assert_eq!(app.alignments.len(), 2);
+        assert_eq!(app.current_alignment, 0);
+        assert_eq!(app.alignment.get_file_annotation("ID"), Some("first"));
+        assert_eq!(app.alignment.width(), 4);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_select_alignment_switches() {
+        let path = write_temp("select", MULTI);
+        let mut app = App::new();
+        app.load_file(&path).unwrap();
+
+        app.select_alignment(1);
+        assert_eq!(app.current_alignment, 1);
+        assert_eq!(app.alignment.get_file_annotation("ID"), Some("second"));
+        assert_eq!(app.alignment.width(), 6);
+
+        // Out-of-range selection is rejected, leaving state unchanged.
+        app.select_alignment(99);
+        assert_eq!(app.current_alignment, 1);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_picker_navigation_and_confirm() {
+        let path = write_temp("picker", MULTI);
+        let mut app = App::new();
+        app.load_file(&path).unwrap();
+
+        app.open_msa_picker();
+        assert!(app.show_msa_picker);
+        assert_eq!(app.msa_picker_selection, 0);
+
+        app.msa_picker_move(1);
+        assert_eq!(app.msa_picker_selection, 1);
+        // Clamped at the end.
+        app.msa_picker_move(5);
+        assert_eq!(app.msa_picker_selection, 1);
+
+        app.msa_picker_confirm();
+        assert!(!app.show_msa_picker);
+        assert_eq!(app.current_alignment, 1);
+
+        let _ = std::fs::remove_file(&path);
     }
 }

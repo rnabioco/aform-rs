@@ -108,6 +108,78 @@ pub fn render(frame: &mut Frame, app: &App) {
     if app.show_info {
         render_info(frame, app);
     }
+
+    // Render MSA selection overlay if active
+    if app.show_msa_picker {
+        render_msa_picker(frame, app);
+    }
+}
+
+/// Render the MSA (multiple-alignment) selection overlay.
+fn render_msa_picker(frame: &mut Frame, app: &App) {
+    let mut lines = vec![
+        Line::from(Span::styled(
+            "Select alignment",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+
+    for (i, alignment) in app.alignments.iter().enumerate() {
+        let selected = i == app.msa_picker_selection;
+        let current = i == app.current_alignment;
+
+        let marker = if selected { "▶ " } else { "  " };
+        let label = app.alignment_label(i);
+        let detail = format!(
+            "{}x{}{}",
+            alignment.num_sequences(),
+            alignment.width(),
+            if current { " (current)" } else { "" }
+        );
+        let text = format!("{marker}{:>2}. {label}  [{detail}]", i + 1);
+
+        let style = if selected {
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        lines.push(Line::from(Span::styled(text, style)));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "j/k move · Enter select · Esc cancel",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    // Calculate centered popup area
+    let area = frame.area();
+    let content_width = lines.iter().map(|l| l.width()).max().unwrap_or(20) as u16;
+    let popup_width = (content_width + 4)
+        .min(area.width.saturating_sub(4))
+        .max(24);
+    let popup_height = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
+    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .title(format!(" {} alignments ", app.alignments.len()))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().bg(Color::Black));
+
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .style(Style::default().bg(Color::Black));
+
+    frame.render_widget(paragraph, popup_area);
 }
 
 /// Height of the ruler in lines.
@@ -1291,6 +1363,17 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         )
     };
 
+    // Multiple-alignment indicator (only when the file holds more than one)
+    let msa_info = if app.alignments.len() > 1 {
+        format!(
+            " MSA {}/{} ",
+            app.current_alignment + 1,
+            app.alignments.len()
+        )
+    } else {
+        String::new()
+    };
+
     // Sequence type
     let type_info = format!(" {} ", app.sequence_type.as_str());
 
@@ -1333,6 +1416,12 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Span::styled(
             align_info,
             Style::default().fg(app.theme.status_bar.alignment_info.to_color()),
+        ),
+        Span::styled(
+            msa_info,
+            Style::default()
+                .fg(app.theme.status_bar.color_scheme.to_color())
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             type_info,
@@ -1643,6 +1732,7 @@ fn render_help(frame: &mut Frame, app: &App) {
         Line::from("  :uncluster  Restore original order"),
         Line::from("  :tree       Toggle dendrogram tree"),
         Line::from("  :svg <path> Export as SVG image"),
+        Line::from("  :msa [N]    Select alignment (multi-MSA files)"),
         Line::from("  :help       Show this help"),
         Line::from(""),
         Line::from(Span::styled(

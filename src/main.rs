@@ -43,6 +43,11 @@ struct Args {
     #[arg(value_name = "FILE")]
     file: Option<PathBuf>,
 
+    /// Select which alignment to display (1-based) in a multi-alignment file.
+    /// If omitted and the file holds several, a selection menu is shown.
+    #[arg(short = 'm', long, value_name = "N")]
+    msa: Option<usize>,
+
     /// Initial color scheme (none, structure, base, conservation, compensatory).
     #[arg(short, long, default_value = "none")]
     color: String,
@@ -84,6 +89,11 @@ const AFTER_HELP: &str = "\
 INTERACTIVE COMMANDS:
   Press ':' to enter command mode, then type a command and press Enter.
   Press '?' for interactive help overlay.
+
+MULTIPLE ALIGNMENTS:
+  :msa            Open the alignment selection menu
+  :msa N          Switch to alignment N (1-based)
+  (use --msa N on the command line to pick one at startup)
 
 VISUALIZATION:
   :ruler          Toggle column ruler
@@ -161,6 +171,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Err(e) = app.load_file(&path) {
             app.set_status(format!("Error: {}", e));
         } else {
+            // Select a specific alignment, or offer a menu for multi-alignment files.
+            match args.msa {
+                Some(n) if n >= 1 => app.select_alignment(n - 1),
+                Some(_) => app.set_status("Invalid --msa value (must be >= 1)"),
+                None if app.alignments.len() > 1 => app.open_msa_picker(),
+                None => {}
+            }
+
             // Auto-enable coloring when no explicit --color was given
             if args.color == "none" {
                 app.auto_configure_display();

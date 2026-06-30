@@ -4,6 +4,27 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::app::{App, Mode};
 
+/// Handle keys while the MSA selection overlay is open.
+fn handle_msa_picker(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down | KeyCode::Tab => app.msa_picker_move(1),
+        KeyCode::Char('k') | KeyCode::Up => app.msa_picker_move(-1),
+        KeyCode::Char('g') | KeyCode::Home => app.msa_picker_move(isize::MIN),
+        KeyCode::Char('G') | KeyCode::End => app.msa_picker_move(isize::MAX),
+        KeyCode::Enter => app.msa_picker_confirm(),
+        KeyCode::Char('1'..='9') => {
+            // Jump straight to a 1-based alignment number.
+            if let KeyCode::Char(c) = key.code
+                && let Some(d) = c.to_digit(10)
+            {
+                app.msa_picker_selection = (d as usize - 1).min(app.alignments.len() - 1);
+            }
+        }
+        KeyCode::Esc | KeyCode::Char('q') => app.show_msa_picker = false,
+        _ => {}
+    }
+}
+
 /// Handle movement keys common to normal and visual modes.
 /// Returns true if the key was handled as a movement.
 fn handle_movement_keys(app: &mut App, key: KeyEvent, page_size: usize) -> bool {
@@ -84,6 +105,12 @@ fn handle_movement_keys(app: &mut App, key: KeyEvent, page_size: usize) -> bool 
 
 /// Handle a key event.
 pub fn handle_key(app: &mut App, key: KeyEvent, page_size: usize) {
+    // MSA selection overlay captures keys while open.
+    if app.show_msa_picker {
+        handle_msa_picker(app, key);
+        return;
+    }
+
     // Close help overlay on any keypress
     if app.show_help {
         app.show_help = false;

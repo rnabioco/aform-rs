@@ -58,6 +58,17 @@ pub fn write<W: Write>(alignment: &Alignment, mut writer: W) -> Result<()> {
     Ok(())
 }
 
+/// Write several Stockholm alignments to a writer, in order.
+///
+/// Each alignment is emitted as its own `# STOCKHOLM`/`//` record, producing a
+/// valid multi-alignment Stockholm file.
+pub fn write_all<W: Write>(alignments: &[Alignment], mut writer: W) -> Result<()> {
+    for alignment in alignments {
+        write(alignment, &mut writer)?;
+    }
+    Ok(())
+}
+
 /// Write a Stockholm alignment to a string.
 #[allow(dead_code)] // API convenience function
 pub fn write_string(alignment: &Alignment) -> Result<String> {
@@ -70,6 +81,12 @@ pub fn write_string(alignment: &Alignment) -> Result<String> {
 pub fn write_file(alignment: &Alignment, path: &std::path::Path) -> Result<()> {
     let file = std::fs::File::create(path)?;
     write(alignment, file)
+}
+
+/// Write several Stockholm alignments to a file, in order.
+pub fn write_all_file(alignments: &[Alignment], path: &std::path::Path) -> Result<()> {
+    let file = std::fs::File::create(path)?;
+    write_all(alignments, file)
 }
 
 #[cfg(test)]
@@ -99,6 +116,24 @@ seq2/1-10  ACGU..ACGU
         assert_eq!(alignment.sequences.len(), reparsed.sequences.len());
         assert_eq!(alignment.sequences[0].data(), reparsed.sequences[0].data());
         assert_eq!(alignment.ss_cons(), reparsed.ss_cons());
+    }
+
+    #[test]
+    fn test_write_all_roundtrip() {
+        let input = "# STOCKHOLM 1.0\n#=GF ID one\nseqA ACGU\n//\n\
+                     # STOCKHOLM 1.0\n#=GF ID two\nseqB GGCC\nseqC GG.C\n//\n";
+
+        let alignments = parser::parse_all(input.as_bytes()).unwrap();
+        assert_eq!(alignments.len(), 2);
+
+        let mut buffer = Vec::new();
+        write_all(&alignments, &mut buffer).unwrap();
+
+        let reparsed = parser::parse_all(buffer.as_slice()).unwrap();
+        assert_eq!(reparsed.len(), 2);
+        assert_eq!(reparsed[0].get_file_annotation("ID"), Some("one"));
+        assert_eq!(reparsed[1].get_file_annotation("ID"), Some("two"));
+        assert_eq!(reparsed[1].sequences.len(), 2);
     }
 
     #[test]

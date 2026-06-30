@@ -1,0 +1,28 @@
+# STOCKHOLM 1.0
+#=GF ID   tRNA_sample
+#=GF DE   Small tRNA-like alignment (first of three)
+
+human    GCCGAGGUAGCUCAGUUGGUAGAGCAUGGGACU
+mouse    GCCGAGGUGGCUCAGUUGGUAGAGCGUGGGACU
+yeast    GGCGAGGUGGCGCAGCUUGGUAGCGCGUUGGCU
+#=GC SS_cons <<<<<<<....>>>>>>>...............
+//
+# STOCKHOLM 1.0
+#=GF ID   hairpin_sample
+#=GF DE   Simple hairpin (second of three)
+
+seq1     CAGGGAAACCUGAUUUUAGGA
+seq2     CGUUUUCGGACGUACAAAGGA
+seq3     CAGGCAAAGCCUGAAAUAGGA
+#=GC SS_cons <<<<....>>>>.........
+//
+# STOCKHOLM 1.0
+#=GF ID   stem_sample
+#=GF DE   Longer stem alignment (third of three)
+
+alpha    AAAAAACCCCGGGGUUUUUUAACCGGUU
+beta     AAAAAGCCCCGGGGUUUUUUAACCGGUA
+gamma    AAAAAACCCGGGGGUUUUUUAGCCGGUU
+delta    AAAAAACCCCGGGAUUUUUUAACCGGUU
+#=GC SS_cons <<<<<<....>>>>>>....<<<<>>>>.
+//
