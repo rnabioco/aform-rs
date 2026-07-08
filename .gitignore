@@ -24,3 +24,6 @@ docs/images/editor.png/
 
 # pixi
 .pixi/
+
+# claude
+.claude/
