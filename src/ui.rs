@@ -6,7 +6,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{
+        Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
+        ScrollbarOrientation, ScrollbarState,
+    },
 };
 
 use crate::app::{ActivePane, App, ColorScheme, Mode, SplitMode, TerminalTheme};
@@ -117,19 +120,13 @@ pub fn render(frame: &mut Frame, app: &App) {
 
 /// Render the MSA (multiple-alignment) selection overlay.
 fn render_msa_picker(frame: &mut Frame, app: &App) {
-    let mut lines = vec![
-        Line::from(Span::styled(
-            "Select alignment",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-    ];
-
+    // Build one list item per alignment. The selection marker and highlight are
+    // provided by the List widget (highlight_symbol / highlight_style), so items
+    // themselves only carry the (current) distinction.
+    let mut items: Vec<ListItem> = Vec::with_capacity(app.alignments.len());
+    let mut content_width: u16 = 0;
     for (i, alignment) in app.alignments.iter().enumerate() {
-        let selected = i == app.msa_picker_selection;
         let current = i == app.current_alignment;
-
-        let marker = if selected { "▶ " } else { "  " };
         let label = app.alignment_label(i);
         let detail = format!(
             "{}x{}{}",
@@ -137,32 +134,31 @@ fn render_msa_picker(frame: &mut Frame, app: &App) {
             alignment.width(),
             if current { " (current)" } else { "" }
         );
-        let text = format!("{marker}{:>2}. {label}  [{detail}]", i + 1);
+        let text = format!("{:>2}. {label}  [{detail}]", i + 1);
 
-        let style = if selected {
+        let style = if current {
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Cyan)
+                .fg(Color::White)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)
         };
-        lines.push(Line::from(Span::styled(text, style)));
+        content_width = content_width.max(Line::from(text.as_str()).width() as u16);
+        items.push(ListItem::new(Line::from(Span::styled(text, style))));
     }
 
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "j/k move · Enter select · Esc cancel",
-        Style::default().fg(Color::DarkGray),
-    )));
+    let hint = "j/k move · Enter select · Esc cancel";
+    content_width = content_width.max(hint.len() as u16);
 
-    // Calculate centered popup area
+    // Calculate centered popup area. Add room for borders, the highlight symbol
+    // ("▶ ", 2 cells), and the footer hint line.
     let area = frame.area();
-    let content_width = lines.iter().map(|l| l.width()).max().unwrap_or(20) as u16;
-    let popup_width = (content_width + 4)
+    let popup_width = (content_width + 6)
         .min(area.width.saturating_sub(4))
         .max(24);
-    let popup_height = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
+    // Content height: list rows + blank + hint, capped by the terminal.
+    let content_height = app.alignments.len() as u16 + 2;
+    let popup_height = (content_height + 2).min(area.height.saturating_sub(2));
     let popup_x = (area.width.saturating_sub(popup_width)) / 2;
     let popup_y = (area.height.saturating_sub(popup_height)) / 2;
     let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
@@ -175,11 +171,35 @@ fn render_msa_picker(frame: &mut Frame, app: &App) {
         .border_style(Style::default().fg(Color::Cyan))
         .style(Style::default().bg(Color::Black));
 
-    let paragraph = Paragraph::new(lines)
-        .block(block)
-        .style(Style::default().bg(Color::Black));
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
 
-    frame.render_widget(paragraph, popup_area);
+    // Split inner area into the scrollable list and a footer hint line.
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(inner);
+
+    let list = List::new(items)
+        .style(Style::default().bg(Color::Black).fg(Color::White))
+        .highlight_style(
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ");
+
+    // Rebuild the ListState from the source-of-truth index each render.
+    let mut list_state = ListState::default().with_selected(Some(app.msa_picker_selection));
+    frame.render_stateful_widget(list, chunks[0], &mut list_state);
+
+    let hint_para = Paragraph::new(Line::from(Span::styled(
+        hint,
+        Style::default().fg(Color::DarkGray),
+    )))
+    .style(Style::default().bg(Color::Black));
+    frame.render_widget(hint_para, chunks[1]);
 }
 
 /// Height of the ruler in lines.
@@ -501,6 +521,31 @@ fn render_alignment_pane(
             ruler_height,
             annotation_height,
             actual_seq_rows,
+        );
+    }
+
+    // === Render scrollbars over the pane's borders ===
+    // Vertical scrollbar (right border) when more sequences than fit.
+    if visible_seq_count > visible_rows {
+        let mut vscroll_state = ScrollbarState::new(visible_seq_count).position(viewport_row);
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None),
+            area,
+            &mut vscroll_state,
+        );
+    }
+
+    // Horizontal scrollbar (bottom border) when the alignment is wider than fits.
+    if alignment_width > seq_width {
+        let mut hscroll_state = ScrollbarState::new(alignment_width).position(viewport_col);
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::HorizontalBottom)
+                .begin_symbol(None)
+                .end_symbol(None),
+            area,
+            &mut hscroll_state,
         );
     }
 }
@@ -1450,22 +1495,23 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 
 /// Render the command/message line.
 fn render_command_line(frame: &mut Frame, app: &App, area: Rect) {
+    // Prefix is a single cell (":" or "/") for both command and search modes.
+    let prefix_width: u16 = 1;
+
     let content = match app.mode {
         Mode::Command => Line::from(vec![
             Span::styled(
                 ":",
                 Style::default().fg(app.theme.command_line.command_prefix.to_color()),
             ),
-            Span::raw(&app.command_buffer),
-            Span::styled("_", Style::default().add_modifier(Modifier::SLOW_BLINK)),
+            Span::raw(app.line_input.value()),
         ]),
         Mode::Search => Line::from(vec![
             Span::styled(
                 "/",
                 Style::default().fg(app.theme.command_line.search_prefix.to_color()),
             ),
-            Span::raw(&app.search.pattern),
-            Span::styled("_", Style::default().add_modifier(Modifier::SLOW_BLINK)),
+            Span::raw(app.line_input.value()),
         ]),
         _ => {
             if let Some(msg) = &app.status_message {
@@ -1482,6 +1528,14 @@ fn render_command_line(frame: &mut Frame, app: &App, area: Rect) {
 
     let paragraph = Paragraph::new(content);
     frame.render_widget(paragraph, area);
+
+    // Place a real terminal cursor after the prefix in command/search modes.
+    if matches!(app.mode, Mode::Command | Mode::Search) {
+        frame.set_cursor_position((
+            area.x + prefix_width + app.line_input.visual_cursor() as u16,
+            area.y,
+        ));
+    }
 }
 
 /// Calculate visible dimensions for the alignment area.
@@ -1736,12 +1790,13 @@ fn render_help(frame: &mut Frame, app: &App) {
         Line::from("  :help       Show this help"),
         Line::from(""),
         Line::from(Span::styled(
-            "Press any key to close",
+            "j/k scroll · any other key to close",
             Style::default().fg(Color::DarkGray),
         )),
     ];
 
-    // Calculate centered popup area
+    // Calculate centered popup area (cap height at the terminal so tall content
+    // scrolls rather than being clipped off-screen).
     let area = frame.area();
     let popup_width = 50.min(area.width.saturating_sub(4));
     let popup_height = (help_text.len() as u16 + 2).min(area.height.saturating_sub(4));
@@ -1760,8 +1815,14 @@ fn render_help(frame: &mut Frame, app: &App) {
         .border_style(Style::default().fg(popup_border))
         .style(Style::default().bg(popup_bg));
 
+    // Clamp the scroll so the last line stays visible (can't scroll past content).
+    let inner_height = popup_area.height.saturating_sub(2);
+    let max_scroll = (help_text.len() as u16).saturating_sub(inner_height);
+    let scroll = app.help_scroll.min(max_scroll);
+
     let help_paragraph = Paragraph::new(help_text)
         .block(help_block)
+        .scroll((scroll, 0))
         .style(Style::default().bg(popup_bg));
 
     frame.render_widget(help_paragraph, popup_area);
@@ -1835,7 +1896,7 @@ fn render_info(frame: &mut Frame, app: &App) {
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "Press any key to close",
+        "j/k scroll · any other key to close",
         Style::default().fg(Color::DarkGray),
     )));
 
@@ -1858,8 +1919,14 @@ fn render_info(frame: &mut Frame, app: &App) {
         .border_style(Style::default().fg(popup_border))
         .style(Style::default().bg(popup_bg));
 
+    // Clamp the scroll so the last line stays visible (can't scroll past content).
+    let inner_height = popup_area.height.saturating_sub(2);
+    let max_scroll = (lines.len() as u16).saturating_sub(inner_height);
+    let scroll = app.info_scroll.min(max_scroll);
+
     let info_paragraph = Paragraph::new(lines)
         .block(info_block)
+        .scroll((scroll, 0))
         .style(Style::default().bg(popup_bg));
 
     frame.render_widget(info_paragraph, popup_area);

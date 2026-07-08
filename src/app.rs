@@ -41,20 +41,6 @@ impl SearchState {
         !self.matches.is_empty() && !self.pattern.is_empty()
     }
 
-    /// Navigate to previous history entry.
-    pub fn history_prev(&mut self) {
-        if let Some(entry) = self.history.prev(&self.pattern) {
-            self.pattern = entry.to_string();
-        }
-    }
-
-    /// Navigate to next history entry.
-    pub fn history_next(&mut self) {
-        if let Some(entry) = self.history.next() {
-            self.pattern = entry.to_string();
-        }
-    }
-
     /// Check if a position is part of a search match.
     /// Returns Some(true) if it's the current match, Some(false) if it's another match, None if not a match.
     pub fn is_match(&self, row: usize, col: usize) -> Option<bool> {
@@ -178,6 +164,8 @@ pub struct App {
     pub color_scheme: ColorScheme,
     /// Show help overlay.
     pub show_help: bool,
+    /// Scroll offset (in lines) for the help overlay.
+    pub(crate) help_scroll: u16,
     /// Show position ruler at top.
     pub show_ruler: bool,
     /// Show row numbers.
@@ -192,8 +180,9 @@ pub struct App {
     pub active_pane: ActivePane,
 
     // === Crate-internal ===
-    /// Command line buffer (for command mode).
-    pub(crate) command_buffer: String,
+    /// Shared line-editing buffer for command (`:`) and search (`/`) modes.
+    /// These modes are never active simultaneously, so a single input suffices.
+    pub(crate) line_input: tui_input::Input,
     /// Should quit.
     pub(crate) should_quit: bool,
 
@@ -287,6 +276,8 @@ pub struct App {
     // === Info overlay ===
     /// Show file info overlay.
     pub show_info: bool,
+    /// Scroll offset (in lines) for the info overlay.
+    pub(crate) info_scroll: u16,
 
     // === Multiple alignments ===
     /// All alignments loaded from the current file (a Stockholm file may hold
@@ -324,7 +315,7 @@ impl Default for App {
             viewport_row: 0,
             viewport_col: 0,
             mode: Mode::Normal,
-            command_buffer: String::new(),
+            line_input: tui_input::Input::default(),
             command_history: InputHistory::new(),
             search: SearchState::new(),
             completion: None,
@@ -336,6 +327,7 @@ impl Default for App {
             history: History::new(),
             should_quit: false,
             show_help: false,
+            help_scroll: 0,
             show_ruler: true,
             show_row_numbers: true,
             show_short_ids: false,
@@ -369,6 +361,7 @@ impl Default for App {
             show_pp_cons: false,
             consensus_threshold: 0.7,
             show_info: false,
+            info_scroll: 0,
             alignments: Vec::new(),
             current_alignment: 0,
             show_msa_picker: false,
@@ -817,20 +810,20 @@ impl App {
     /// Enter command mode.
     pub fn enter_command_mode(&mut self) {
         self.mode = Mode::Command;
-        self.command_buffer.clear();
+        self.line_input = tui_input::Input::default();
         self.command_history.reset_navigation();
     }
 
     /// Return to normal mode.
     pub fn enter_normal_mode(&mut self) {
         self.mode = Mode::Normal;
-        self.command_buffer.clear();
+        self.line_input = tui_input::Input::default();
     }
 
     /// Enter search mode.
     pub fn enter_search_mode(&mut self) {
         self.mode = Mode::Search;
-        self.search.pattern.clear();
+        self.line_input = tui_input::Input::default();
     }
 
     /// Enter visual selection mode.
@@ -1291,8 +1284,8 @@ impl App {
 
     /// Execute a command from command mode.
     pub fn execute_command(&mut self) {
-        let command = self.command_buffer.trim().to_string();
-        self.command_buffer.clear();
+        let command = self.line_input.value().trim().to_string();
+        self.line_input = tui_input::Input::default();
         self.mode = Mode::Normal;
 
         if command.is_empty() {
@@ -1454,6 +1447,7 @@ impl App {
         match parts {
             ["?" | "help"] => {
                 self.show_help = true;
+                self.help_scroll = 0;
                 true
             }
             ["ruler"] => {
@@ -1518,6 +1512,7 @@ impl App {
             }
             ["info"] => {
                 self.show_info = !self.show_info;
+                self.info_scroll = 0;
                 true
             }
             ["gapcols"] | ["gapcol"] => {
@@ -1728,6 +1723,7 @@ impl App {
     /// Toggle help display.
     pub fn toggle_help(&mut self) {
         self.show_help = !self.show_help;
+        self.help_scroll = 0;
     }
 
     /// Enable horizontal split (top/bottom panes).
@@ -1951,26 +1947,30 @@ impl App {
 
     /// Navigate to previous command in history (Up arrow).
     pub fn command_history_prev(&mut self) {
-        if let Some(entry) = self.command_history.prev(&self.command_buffer) {
-            self.command_buffer = entry.to_string();
+        if let Some(entry) = self.command_history.prev(self.line_input.value()) {
+            self.line_input = tui_input::Input::new(entry.to_string());
         }
     }
 
     /// Navigate to next command in history (Down arrow).
     pub fn command_history_next(&mut self) {
         if let Some(entry) = self.command_history.next() {
-            self.command_buffer = entry.to_string();
+            self.line_input = tui_input::Input::new(entry.to_string());
         }
     }
 
     /// Navigate to previous search in history (Up arrow).
     pub fn search_history_prev(&mut self) {
-        self.search.history_prev();
+        if let Some(entry) = self.search.history.prev(self.line_input.value()) {
+            self.line_input = tui_input::Input::new(entry.to_string());
+        }
     }
 
     /// Navigate to next search in history (Down arrow).
     pub fn search_history_next(&mut self) {
-        self.search.history_next();
+        if let Some(entry) = self.search.history.next() {
+            self.line_input = tui_input::Input::new(entry.to_string());
+        }
     }
 
     /// Mark the alignment as modified.
