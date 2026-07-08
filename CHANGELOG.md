@@ -2,6 +2,15 @@
 
 All notable changes to aform-rs will be documented in this file.
 
+## [0.2.0] - 2026-07-08
+
+### Added
+- Multi-alignment Stockholm file support with alignment selection
+
+### Changed
+- Adopted ratatui ecosystem widgets for scrollbars, list, and text input
+- Faster, non-blocking sequence clustering with a corrected dendrogram
+
 ## [0.1.0] - 2026-04-15
 
 ### Added
