@@ -5,6 +5,54 @@
 
 use kodama::{Method, linkage};
 
+/// Maximum width (in characters) of the rendered dendrogram column.
+const MAX_TREE_WIDTH: usize = 16;
+
+/// Layout mode for the dendrogram column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TreeLayout {
+    /// Topology only: horizontal position = tree depth. Compact and uniform.
+    #[default]
+    Cladogram,
+    /// Distance-scaled: horizontal position ∝ merge dissimilarity (branch length).
+    Phylogram,
+}
+
+// Connection-direction bits for the box-drawing bitmask grid.
+const UP: u8 = 1;
+const DOWN: u8 = 2;
+const LEFT: u8 = 4;
+const RIGHT: u8 = 8;
+
+/// Translate a set of connection directions into a rounded box-drawing glyph.
+fn mask_to_glyph(mask: u8) -> char {
+    const H: u8 = LEFT | RIGHT;
+    const V: u8 = UP | DOWN;
+    const DR: u8 = DOWN | RIGHT;
+    const DL: u8 = DOWN | LEFT;
+    const UR: u8 = UP | RIGHT;
+    const UL: u8 = UP | LEFT;
+    const VR: u8 = V | RIGHT;
+    const VL: u8 = V | LEFT;
+    const HD: u8 = H | DOWN;
+    const HU: u8 = H | UP;
+    const CROSS: u8 = V | H;
+    match mask {
+        LEFT | RIGHT | H => '─',
+        UP | DOWN | V => '│',
+        DR => '╭',
+        DL => '╮',
+        UR => '╰',
+        UL => '╯',
+        VR => '├',
+        VL => '┤',
+        HD => '┬',
+        HU => '┴',
+        CROSS => '┼',
+        _ => ' ',
+    }
+}
+
 /// Result of clustering: leaf order and optional tree visualization.
 #[derive(Debug, Clone)]
 pub struct ClusterResult {
@@ -61,11 +109,15 @@ pub fn compute_distance_matrix(sequences: &[Vec<char>], gap_chars: &[char]) -> V
 /// Uses UPGMA (average linkage) for balanced trees.
 #[allow(dead_code)]
 pub fn cluster_sequences(sequences: &[Vec<char>], gap_chars: &[char]) -> Vec<usize> {
-    cluster_sequences_with_tree(sequences, gap_chars).order
+    cluster_sequences_with_tree(sequences, gap_chars, TreeLayout::Cladogram).order
 }
 
 /// Perform hierarchical clustering and return both order and tree visualization.
-pub fn cluster_sequences_with_tree(sequences: &[Vec<char>], gap_chars: &[char]) -> ClusterResult {
+pub fn cluster_sequences_with_tree(
+    sequences: &[Vec<char>],
+    gap_chars: &[char],
+    layout: TreeLayout,
+) -> ClusterResult {
     let n = sequences.len();
     if n <= 1 {
         return ClusterResult {
@@ -87,8 +139,13 @@ pub fn cluster_sequences_with_tree(sequences: &[Vec<char>], gap_chars: &[char]) 
     // Extract leaf order from dendrogram (depth-first traversal)
     let order = dendrogram_order(&dendrogram, n);
 
-    // Build tree visualization
-    let (tree_lines, tree_width) = build_tree_chars(&dendrogram, n, &order);
+    // Each sequence occupies exactly one output row at its display position.
+    let mut leaf_span = vec![(0usize, 0usize); n];
+    for (row, &leaf) in order.iter().enumerate() {
+        leaf_span[leaf] = (row, row);
+    }
+
+    let (tree_lines, tree_width) = build_tree_chars(&dendrogram, n, &leaf_span, n, layout);
 
     ClusterResult {
         order,
@@ -106,6 +163,7 @@ pub fn cluster_sequences_with_collapse(
     sequences: &[Vec<char>],
     gap_chars: &[char],
     collapse_groups: &[(usize, Vec<usize>)],
+    layout: TreeLayout,
 ) -> ClusterResult {
     let n = sequences.len();
     let num_unique = collapse_groups.len();
@@ -113,7 +171,7 @@ pub fn cluster_sequences_with_collapse(
     // If no duplicates or trivial case, use standard clustering
     // but still produce group_order so collapse+cluster works correctly
     if num_unique == n || n <= 1 {
-        let mut result = cluster_sequences_with_tree(sequences, gap_chars);
+        let mut result = cluster_sequences_with_tree(sequences, gap_chars, layout);
         // Map each sequence index back to its group index
         // When all sequences are unique, group i contains sequence collapse_groups[i].0
         // So we need: for each position in order, find which group that sequence belongs to
@@ -157,29 +215,31 @@ pub fn cluster_sequences_with_collapse(
     // Get order of representatives
     let rep_order = dendrogram_order(&dendrogram, num_unique);
 
-    // Build tree for representatives
-    let (rep_tree_lines, tree_width) = build_tree_chars(&dendrogram, num_unique, &rep_order);
-
-    // Expand order: for each representative in order, include all its members
+    // Expand rep order into full sequence order, tracking the row block each
+    // group occupies so the full tree can be drawn correctly across all n rows.
     let mut order = Vec::with_capacity(n);
-    let mut tree_lines = Vec::with_capacity(n);
-
-    // Build collapsed tree lines in display order (one per group)
-    let mut collapsed_tree_lines = Vec::with_capacity(num_unique);
-
-    for &rep_idx in &rep_order {
-        let (_, members) = &collapse_groups[rep_idx];
-        let tree_line = &rep_tree_lines[rep_order.iter().position(|&x| x == rep_idx).unwrap()];
-
-        // Add to collapsed tree (one line per group)
-        collapsed_tree_lines.push(tree_line.clone());
-
-        // Expand for full tree (one line per member)
+    let mut rep_span = vec![(0usize, 0usize); num_unique];
+    let mut row = 0usize;
+    for &rep_slot in &rep_order {
+        let (_, members) = &collapse_groups[rep_slot];
+        let start = row;
         for &member in members {
             order.push(member);
-            tree_lines.push(tree_line.clone());
+            row += 1;
         }
+        rep_span[rep_slot] = (start, row - 1);
     }
+
+    // Full tree: each group is one leaf spanning its block of member rows.
+    let (tree_lines, tree_width) = build_tree_chars(&dendrogram, num_unique, &rep_span, n, layout);
+
+    // Collapsed tree: each group is one leaf on a single row, in display order.
+    let mut group_span = vec![(0usize, 0usize); num_unique];
+    for (grow, &rep_slot) in rep_order.iter().enumerate() {
+        group_span[rep_slot] = (grow, grow);
+    }
+    let (collapsed_tree_lines, _) =
+        build_tree_chars(&dendrogram, num_unique, &group_span, num_unique, layout);
 
     ClusterResult {
         order,
@@ -225,121 +285,109 @@ fn traverse_cluster(cluster: usize, n: usize, steps: &[kodama::Step<f64>], order
     }
 }
 
-/// Build dendrogram representation showing tree topology.
-/// Uses bracket-style characters: ─┬┘│ to show which sequences group together.
-/// Returns (tree_lines, tree_width).
+/// Render a dendrogram as box-drawing lines, one string per output row.
+///
+/// `m` is the number of clustered leaves (whole sequences, or collapse
+/// representatives). `leaf_row_span[leaf_id]` is the `(first_row, last_row)` block
+/// each leaf occupies in the final `total_rows`-high output — a single row for the
+/// un-collapsed case, a k-row block for a collapse group. Leaves sit at column 0
+/// (adjacent to the alignment) and the root is at the rightmost column.
+///
+/// The layout assigns every node an anchor row (where its horizontal arm sits) and
+/// a column, then paints connections onto a direction-bitmask grid so lines join
+/// with correct corners/tees. Returns `(lines, width)`.
 fn build_tree_chars(
     dend: &kodama::Dendrogram<f64>,
-    n: usize,
-    order: &[usize],
+    m: usize,
+    leaf_row_span: &[(usize, usize)],
+    total_rows: usize,
+    layout: TreeLayout,
 ) -> (Vec<String>, usize) {
     let steps = dend.steps();
 
-    const MAX_TREE_WIDTH: usize = 16;
-
-    if steps.is_empty() || n <= 1 {
-        return (vec!["─".to_string(); n], 1);
+    if m <= 1 || steps.is_empty() {
+        return (vec!["─".to_string(); total_rows], 1);
     }
 
-    // Map from original sequence index to display row
-    let mut orig_to_row = vec![0usize; n];
-    for (row, &orig) in order.iter().enumerate() {
-        orig_to_row[orig] = row;
+    let num_nodes = 2 * m - 1;
+    let root = num_nodes - 1;
+
+    // Anchor row and column for every node (leaves 0..m, internal m..num_nodes).
+    let mut anchor = vec![0usize; num_nodes];
+    let mut col = vec![0usize; num_nodes];
+    for leaf in 0..m {
+        let (lo, hi) = leaf_row_span[leaf];
+        anchor[leaf] = (lo + hi) / 2;
+        col[leaf] = 0;
     }
 
-    // For each node (leaf or internal), track its row span in display order
-    // Leaves span a single row, internal nodes span from min to max of children
-    let mut node_row_min = vec![0usize; 2 * n - 1];
-    let mut node_row_max = vec![0usize; 2 * n - 1];
+    // Phylogram scales by branch length; the root merge is the largest dissimilarity.
+    let root_dissim = steps.last().map(|s| s.dissimilarity).unwrap_or(0.0);
+    let phylo = matches!(layout, TreeLayout::Phylogram) && root_dissim > 0.0;
 
-    // Initialize leaves
-    for orig in 0..n {
-        let row = orig_to_row[orig];
-        node_row_min[orig] = row;
-        node_row_max[orig] = row;
-    }
-
-    // Compute internal node spans (steps create nodes n, n+1, n+2, ...)
     for (i, step) in steps.iter().enumerate() {
-        let node_id = n + i;
-        node_row_min[node_id] = node_row_min[step.cluster1].min(node_row_min[step.cluster2]);
-        node_row_max[node_id] = node_row_max[step.cluster1].max(node_row_max[step.cluster2]);
+        let node = m + i;
+        anchor[node] = (anchor[step.cluster1] + anchor[step.cluster2]) / 2;
+        let child_max = col[step.cluster1].max(col[step.cluster2]);
+        col[node] = if phylo {
+            let scaled =
+                ((step.dissimilarity / root_dissim) * (MAX_TREE_WIDTH - 1) as f64).round() as usize;
+            scaled.max(1).max(child_max)
+        } else {
+            child_max + 1
+        };
     }
 
-    // Assign columns to internal nodes using recursive traversal
-    // Each node gets the next available column when we "close" it
-    let mut node_col = vec![0usize; 2 * n - 1];
-    let mut next_col = 0usize;
-
-    // Process nodes in order of their creation (merge order)
-    // This ensures parent nodes get columns after their children
-    for (i, _step) in steps.iter().enumerate() {
-        let node_id = n + i;
-        node_col[node_id] = next_col;
-        next_col += 1;
-    }
-
-    let tree_width = next_col.clamp(1, MAX_TREE_WIDTH);
-
-    // Scale columns if we exceed max width
-    if next_col > MAX_TREE_WIDTH {
-        for col in node_col.iter_mut().skip(n) {
-            *col = (*col * (MAX_TREE_WIDTH - 1)) / (next_col - 1).max(1);
+    // Compress columns to fit MAX_TREE_WIDTH, keeping leaves at column 0.
+    let raw_max = col.iter().copied().max().unwrap_or(0);
+    if raw_max >= MAX_TREE_WIDTH {
+        for c in col.iter_mut().skip(m) {
+            *c = *c * (MAX_TREE_WIDTH - 1) / raw_max;
+        }
+        // Restore parent ≥ children after integer rounding.
+        for (i, step) in steps.iter().enumerate() {
+            let node = m + i;
+            col[node] = col[node].max(col[step.cluster1]).max(col[step.cluster2]);
         }
     }
 
-    // Build tree lines
-    let mut tree_lines = Vec::with_capacity(n);
+    let width = col.iter().copied().max().unwrap_or(0) + 1;
 
-    for row in 0..n {
-        let mut chars = vec![' '; tree_width];
+    // Paint connections onto a bitmask grid, then translate each cell to a glyph.
+    let mut grid = vec![0u8; total_rows * width];
+    let idx = |r: usize, c: usize| r * width + c;
 
-        // For each internal node, draw its contribution to this row
-        for (i, _step) in steps.iter().enumerate() {
-            let node_id = n + i;
-            let col = node_col[node_id];
-            if col >= tree_width {
-                continue;
-            }
+    for (i, step) in steps.iter().enumerate() {
+        let node = m + i;
+        let c = col[node];
+        let (a1, a2) = (anchor[step.cluster1], anchor[step.cluster2]);
 
-            let row_min = node_row_min[node_id];
-            let row_max = node_row_max[node_id];
-
-            if row < row_min || row > row_max {
-                // Outside this node's span
-                continue;
-            }
-
-            if row == row_min {
-                // Top of bracket
-                chars[col] = '┬';
-            } else if row == row_max {
-                // Bottom of bracket
-                chars[col] = '┘';
-            } else {
-                // Middle - vertical line (don't overwrite existing)
-                if chars[col] == ' ' {
-                    chars[col] = '│';
-                }
+        // Horizontal arm from each child's column rightward to this node's column.
+        for &child in &[step.cluster1, step.cluster2] {
+            let ra = anchor[child];
+            for x in col[child]..c {
+                grid[idx(ra, x)] |= RIGHT;
+                grid[idx(ra, x + 1)] |= LEFT;
             }
         }
 
-        // Fill horizontal lines from left to first bracket character
-        let fill_to = chars
-            .iter()
-            .position(|&ch| ch == '│' || ch == '┬' || ch == '┘')
-            .unwrap_or(tree_width);
-
-        for ch in chars.iter_mut().take(fill_to) {
-            if *ch == ' ' {
-                *ch = '─';
-            }
+        // Vertical bar spanning the two child anchor rows.
+        for r in a1.min(a2)..a1.max(a2) {
+            grid[idx(r, c)] |= DOWN;
+            grid[idx(r + 1, c)] |= UP;
         }
 
-        tree_lines.push(chars.into_iter().collect());
+        // Outgoing arm toward the parent (the root has none).
+        if node != root {
+            grid[idx(anchor[node], c)] |= RIGHT;
+        }
     }
 
-    (tree_lines, tree_width)
+    let tree_lines = (0..total_rows)
+        .map(|r| (0..width).map(|c| mask_to_glyph(grid[idx(r, c)])).collect())
+        .collect();
+
+    (tree_lines, width)
 }
 
 #[cfg(test)]
@@ -429,17 +477,26 @@ mod tests {
             "UUUG".chars().collect(),
         ];
         let gaps = vec!['-', '.'];
-        let result = cluster_sequences_with_tree(&sequences, &gaps);
+        let result = cluster_sequences_with_tree(&sequences, &gaps, TreeLayout::Cladogram);
 
         // Check we got 4 tree lines
         assert_eq!(result.tree_lines.len(), 4);
         // Check tree has expected width
         assert!(result.tree_width >= 1, "Tree should have some width");
-        // Check each line contains expected dendrogram characters
+        // Check each line contains only box-drawing dendrogram characters
         for line in &result.tree_lines {
             assert!(
-                line.chars().all(|c| "─┬┘│ ".contains(c)),
+                line.chars().all(|c| "─│╭╮╰╯├┤┬┴┼ ".contains(c)),
                 "Tree line '{}' contains unexpected characters",
+                line
+            );
+        }
+        // Every leaf row must connect to the tree at column 0.
+        for line in &result.tree_lines {
+            assert_eq!(
+                line.chars().next(),
+                Some('─'),
+                "Leaf row '{}' should start with a horizontal connector",
                 line
             );
         }
@@ -449,7 +506,7 @@ mod tests {
     fn test_tree_rendering_single() {
         let sequences = vec!["ACGU".chars().collect()];
         let gaps = vec!['-', '.'];
-        let result = cluster_sequences_with_tree(&sequences, &gaps);
+        let result = cluster_sequences_with_tree(&sequences, &gaps, TreeLayout::Cladogram);
 
         assert_eq!(result.tree_lines.len(), 1);
         assert_eq!(result.tree_width, 1);
@@ -476,7 +533,12 @@ mod tests {
             (4, vec![4]),       // C appears once
         ];
 
-        let result = cluster_sequences_with_collapse(&sequences, &gaps, &collapse_groups);
+        let result = cluster_sequences_with_collapse(
+            &sequences,
+            &gaps,
+            &collapse_groups,
+            TreeLayout::Cladogram,
+        );
 
         // Should have all 5 sequences in order
         assert_eq!(result.order.len(), 5);
@@ -509,7 +571,12 @@ mod tests {
         let gaps = vec!['-', '.'];
         let collapse_groups = vec![(0, vec![0, 1, 2])];
 
-        let result = cluster_sequences_with_collapse(&sequences, &gaps, &collapse_groups);
+        let result = cluster_sequences_with_collapse(
+            &sequences,
+            &gaps,
+            &collapse_groups,
+            TreeLayout::Cladogram,
+        );
 
         assert_eq!(result.order.len(), 3);
         assert_eq!(result.tree_lines.len(), 3);
@@ -601,7 +668,12 @@ mod tests {
         // Create collapse groups where each sequence is its own group
         let collapse_groups = vec![(0, vec![0]), (1, vec![1]), (2, vec![2]), (3, vec![3])];
 
-        let result = cluster_sequences_with_collapse(&sequences, &gaps, &collapse_groups);
+        let result = cluster_sequences_with_collapse(
+            &sequences,
+            &gaps,
+            &collapse_groups,
+            TreeLayout::Cladogram,
+        );
 
         // Should still produce a valid ordering with all 4 sequences
         assert_eq!(result.order.len(), 4);

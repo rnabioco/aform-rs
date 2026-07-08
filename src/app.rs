@@ -259,6 +259,8 @@ pub struct App {
     pub(crate) tree_width: usize,
     /// Whether to show the dendrogram tree visualization.
     pub(crate) show_tree: bool,
+    /// Dendrogram layout mode (cladogram = topology, phylogram = distance-scaled).
+    pub(crate) tree_layout: crate::clustering::TreeLayout,
     /// Group order when clustering with collapse (maps display_row -> group_index).
     pub(crate) cluster_group_order: Option<Vec<usize>>,
     /// Terminal color theme (detected at startup).
@@ -358,6 +360,7 @@ impl Default for App {
             collapsed_tree: None,
             tree_width: 0,
             show_tree: false,
+            tree_layout: crate::clustering::TreeLayout::Cladogram,
             cluster_group_order: None,
             terminal_theme: TerminalTheme::Dark,
             theme: Theme::default(),
@@ -443,6 +446,7 @@ impl App {
         self.collapsed_tree = None;
         self.cluster_group_order = None;
         self.show_tree = false;
+        self.tree_layout = crate::clustering::TreeLayout::Cladogram;
 
         // Update structure cache (warn on parse errors)
         if let Some(ss) = self.alignment.ss_cons()
@@ -1675,7 +1679,10 @@ impl App {
         // Clustering is not supported in secondary pane with its own alignment
         if self.active_pane == ActivePane::Secondary && self.secondary_alignment.is_some() {
             self.set_status("Clustering not supported in secondary pane");
-            return matches!(parts, ["cluster"] | ["uncluster"] | ["tree"] | ["collapse"]);
+            return matches!(
+                parts,
+                ["cluster"] | ["uncluster"] | ["tree"] | ["phylogram"] | ["collapse"]
+            );
         }
 
         match parts {
@@ -1701,6 +1708,10 @@ impl App {
                 } else if self.cluster_tree.is_some() {
                     self.set_status("Tree hidden");
                 }
+                true
+            }
+            ["phylogram"] => {
+                self.toggle_tree_layout();
                 true
             }
             ["collapse"] => {
@@ -2099,6 +2110,7 @@ impl App {
             &seq_chars,
             &self.gap_chars,
             &self.collapse_groups,
+            self.tree_layout,
         );
         self.cluster_order = Some(result.order);
         self.cluster_tree = Some(result.tree_lines);
@@ -2154,6 +2166,27 @@ impl App {
         } else {
             self.status_message = Some("No tree available. Run :cluster first.".to_string());
         }
+    }
+
+    /// Toggle between cladogram (topology) and phylogram (distance-scaled) layouts.
+    pub fn toggle_tree_layout(&mut self) {
+        use crate::clustering::TreeLayout;
+        if self.cluster_tree.is_none() {
+            self.set_status("No tree available. Run :cluster first.");
+            return;
+        }
+        self.tree_layout = match self.tree_layout {
+            TreeLayout::Cladogram => TreeLayout::Phylogram,
+            TreeLayout::Phylogram => TreeLayout::Cladogram,
+        };
+        // Rebuild the tree lines under the new layout (order is unchanged).
+        self.cluster_sequences();
+        self.show_tree = true;
+        let label = match self.tree_layout {
+            TreeLayout::Cladogram => "cladogram (topology)",
+            TreeLayout::Phylogram => "phylogram (distance-scaled)",
+        };
+        self.set_status(format!("Tree layout: {label}"));
     }
 
     // === Collapse identical sequences ===
