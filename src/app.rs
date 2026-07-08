@@ -10,6 +10,9 @@ use crate::history::InputHistory;
 use crate::stockholm::{Alignment, SequenceType};
 use crate::structure::StructureCache;
 
+/// Braille spinner frames used while a background clustering job runs.
+const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 /// Search state for pattern matching in sequences.
 #[derive(Debug, Clone, Default)]
 pub struct SearchState {
@@ -145,6 +148,19 @@ pub enum TerminalTheme {
     Dark,
 }
 
+/// A clustering computation running on a background thread.
+///
+/// `:cluster` on large alignments can take seconds; running it off the UI thread
+/// keeps the TUI responsive while a spinner animates.
+pub struct ClusteringJob {
+    /// Receiver for the finished [`crate::clustering::ClusterResult`].
+    pub rx: std::sync::mpsc::Receiver<crate::clustering::ClusterResult>,
+    /// Number of sequences being clustered (for the status message).
+    pub seq_count: usize,
+    /// Current spinner frame index.
+    pub spinner: usize,
+}
+
 /// Application state.
 pub struct App {
     // === Public - Core data ===
@@ -250,6 +266,8 @@ pub struct App {
     pub(crate) show_tree: bool,
     /// Group order when clustering with collapse (maps display_row -> group_index).
     pub(crate) cluster_group_order: Option<Vec<usize>>,
+    /// In-progress background clustering job, if any.
+    pub(crate) clustering_job: Option<ClusteringJob>,
     /// Terminal color theme (detected at startup).
     pub terminal_theme: TerminalTheme,
     /// UI theme colors.
@@ -351,6 +369,7 @@ impl Default for App {
             tree_width: 0,
             show_tree: false,
             cluster_group_order: None,
+            clustering_job: None,
             terminal_theme: TerminalTheme::Dark,
             theme: Theme::default(),
             collapse_identical: false,
@@ -1015,6 +1034,10 @@ impl App {
     /// For block pastes, replaces characters in place.
     /// For line-wise pastes, appends sequences after the cursor row.
     pub fn paste(&mut self) {
+        if self.is_clustering() {
+            self.set_status("Clustering in progress…");
+            return;
+        }
         if self.clipboard.is_none() {
             self.set_status("Nothing to paste");
             return;
@@ -1673,15 +1696,17 @@ impl App {
             return matches!(parts, ["cluster"] | ["uncluster"] | ["tree"] | ["collapse"]);
         }
 
+        // Block re-invocation of clustering-mutating commands while a job runs.
+        if self.is_clustering() && matches!(parts, ["cluster"] | ["uncluster"] | ["collapse"]) {
+            self.set_status("Clustering in progress…");
+            return true;
+        }
+
         match parts {
             ["cluster"] => {
-                self.cluster_sequences();
-                // Auto-show tree so user can see sequences were reordered
-                self.show_tree = true;
-                self.set_status(format!(
-                    "Clustered {} sequences by similarity (tree visible)",
-                    self.alignment.num_sequences()
-                ));
+                // Run clustering on a background thread; poll_clustering sets the
+                // final status and applies auto-hide once the result is ready.
+                self.start_clustering();
                 true
             }
             ["uncluster"] => {
@@ -2078,28 +2103,24 @@ impl App {
         }
     }
 
-    /// Cluster sequences by similarity using hierarchical clustering.
-    /// Uses precomputed collapse groups to avoid redundant distance calculations.
-    pub fn cluster_sequences(&mut self) {
-        if self.alignment.sequences.is_empty() {
-            return;
-        }
-
-        // Get sequence chars for clustering
-        let seq_chars: Vec<Vec<char>> = self
-            .alignment
+    /// Snapshot the alignment sequences as owned bytes for clustering.
+    /// Alignments are ASCII, so a byte representation is exact and `Send`.
+    fn snapshot_seq_bytes(&self) -> Vec<Vec<u8>> {
+        self.alignment
             .sequences
             .iter()
-            .map(|s| s.chars().to_vec())
-            .collect();
+            .map(|s| s.data().into_bytes())
+            .collect()
+    }
 
-        // Compute cluster order and tree using UPGMA
-        // Use collapse groups to cluster only unique sequences (optimization)
-        let result = crate::clustering::cluster_sequences_with_collapse(
-            &seq_chars,
-            &self.gap_chars,
-            &self.collapse_groups,
-        );
+    /// Returns true when a background clustering job is in progress.
+    pub fn is_clustering(&self) -> bool {
+        self.clustering_job.is_some()
+    }
+
+    /// Apply a finished [`crate::clustering::ClusterResult`] to app state and clamp
+    /// the cursor. Shared by the synchronous and background clustering paths.
+    fn apply_cluster_result(&mut self, result: crate::clustering::ClusterResult) {
         self.cluster_order = Some(result.order);
         self.cluster_tree = Some(result.tree_lines);
         self.collapsed_tree = result.collapsed_tree_lines;
@@ -2109,6 +2130,101 @@ impl App {
         // Clamp cursor to valid range
         if self.cursor_row >= self.visible_sequence_count() {
             self.cursor_row = self.visible_sequence_count().saturating_sub(1);
+        }
+    }
+
+    /// Cluster sequences by similarity using hierarchical clustering, synchronously.
+    /// Uses precomputed collapse groups to avoid redundant distance calculations.
+    ///
+    /// This blocks the caller; used for CLI startup and post-paste re-clustering
+    /// where blocking is acceptable. Interactive `:cluster` uses [`Self::start_clustering`].
+    pub fn cluster_sequences(&mut self) {
+        self.cluster_now();
+    }
+
+    /// Run the clustering computation synchronously and apply the result.
+    fn cluster_now(&mut self) {
+        if self.alignment.sequences.is_empty() {
+            return;
+        }
+
+        let seq_bytes = self.snapshot_seq_bytes();
+        let gap_lut = crate::clustering::build_gap_lut(&self.gap_chars);
+
+        let result = crate::clustering::cluster_sequences_with_collapse(
+            &seq_bytes,
+            &gap_lut,
+            &self.collapse_groups,
+        );
+        self.apply_cluster_result(result);
+    }
+
+    /// Start clustering on a background thread, animating a spinner while it runs.
+    ///
+    /// Snapshots owned, `Send` data (byte sequences, gap LUT, collapse groups) and
+    /// spawns a thread that computes the result and sends it over an mpsc channel.
+    pub fn start_clustering(&mut self) {
+        if self.alignment.sequences.is_empty() {
+            return;
+        }
+
+        let seq_bytes = self.snapshot_seq_bytes();
+        let gap_lut = crate::clustering::build_gap_lut(&self.gap_chars);
+        let collapse_groups = self.collapse_groups.clone();
+        let seq_count = self.alignment.num_sequences();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let result = crate::clustering::cluster_sequences_with_collapse(
+                &seq_bytes,
+                &gap_lut,
+                &collapse_groups,
+            );
+            // Ignore send errors: the receiver may have been dropped.
+            let _ = tx.send(result);
+        });
+
+        self.clustering_job = Some(ClusteringJob {
+            rx,
+            seq_count,
+            spinner: 0,
+        });
+        self.set_status(format!(
+            "{} Clustering {seq_count} sequences…",
+            SPINNER_FRAMES[0]
+        ));
+    }
+
+    /// Poll the background clustering job (call once per event-loop iteration).
+    /// Applies the result when ready and animates the spinner while it runs.
+    pub fn poll_clustering(&mut self) {
+        let Some(job) = self.clustering_job.as_mut() else {
+            return;
+        };
+
+        match job.rx.try_recv() {
+            Ok(result) => {
+                let seq_count = job.seq_count;
+                self.clustering_job = None;
+                self.apply_cluster_result(result);
+
+                // Show the tree by default; it scrolls line-for-line with the
+                // sequences, so it's no denser per screen at large N. :tree toggles it.
+                self.show_tree = true;
+                self.set_status(format!(
+                    "Clustered {seq_count} sequences by similarity (tree visible)"
+                ));
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                job.spinner = (job.spinner + 1) % SPINNER_FRAMES.len();
+                let frame = SPINNER_FRAMES[job.spinner];
+                let seq_count = job.seq_count;
+                self.set_status(format!("{frame} Clustering {seq_count} sequences…"));
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.clustering_job = None;
+                self.set_status("Clustering failed (worker thread stopped)");
+            }
         }
     }
 
