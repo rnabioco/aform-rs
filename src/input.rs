@@ -1,6 +1,7 @@
 //! Vim-style input handling.
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use tui_input::backend::crossterm::EventHandler;
 
 use crate::app::{App, Mode};
 
@@ -22,6 +23,32 @@ fn handle_msa_picker(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Esc | KeyCode::Char('q') => app.show_msa_picker = false,
         _ => {}
+    }
+}
+
+/// Handle keys while a scrollable overlay (help/info) is open.
+/// Scrolling keys adjust `scroll`; any other key closes the overlay.
+/// The scroll offset is clamped against content by the renderer, so here we
+/// only bump it up/down (saturating).
+fn handle_overlay_keys(key: KeyEvent, show: &mut bool, scroll: &mut u16) {
+    match (key.modifiers, key.code) {
+        (KeyModifiers::NONE, KeyCode::Char('j') | KeyCode::Down) => {
+            *scroll = scroll.saturating_add(1);
+        }
+        (KeyModifiers::NONE, KeyCode::Char('k') | KeyCode::Up) => {
+            *scroll = scroll.saturating_sub(1);
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
+            *scroll = scroll.saturating_add(10);
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
+            *scroll = scroll.saturating_sub(10);
+        }
+        // Esc/q/Enter (and anything else) close the overlay.
+        _ => {
+            *show = false;
+            *scroll = 0;
+        }
     }
 }
 
@@ -111,15 +138,15 @@ pub fn handle_key(app: &mut App, key: KeyEvent, page_size: usize) {
         return;
     }
 
-    // Close help overlay on any keypress
+    // Help overlay: scroll with j/k/arrows/Ctrl-d/u, close on Esc/q/Enter/other.
     if app.show_help {
-        app.show_help = false;
+        handle_overlay_keys(key, &mut app.show_help, &mut app.help_scroll);
         return;
     }
 
-    // Close info overlay on any keypress
+    // Info overlay: scroll with j/k/arrows/Ctrl-d/u, close on Esc/q/Enter/other.
     if app.show_info {
-        app.show_info = false;
+        handle_overlay_keys(key, &mut app.show_info, &mut app.info_scroll);
         return;
     }
 
@@ -387,10 +414,6 @@ fn handle_command_mode(app: &mut App, key: KeyEvent) {
             app.completion = None;
             app.execute_command();
         }
-        KeyCode::Backspace => {
-            app.completion = None;
-            app.command_buffer.pop();
-        }
         KeyCode::Up => {
             app.command_history_prev();
         }
@@ -400,11 +423,12 @@ fn handle_command_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Tab => {
             handle_tab_completion(app);
         }
-        KeyCode::Char(c) => {
+        // All other keys (chars, Backspace, cursor movement) go to the
+        // cursor-aware line editor.
+        _ => {
             app.completion = None;
-            app.command_buffer.push(c);
+            app.line_input.handle_event(&Event::Key(key));
         }
-        _ => {}
     }
 }
 
@@ -413,7 +437,7 @@ fn handle_tab_completion(app: &mut App) {
     use crate::app::CompletionState;
 
     // Check if we're completing a file path command
-    let buffer = app.command_buffer.clone();
+    let buffer = app.line_input.value().to_string();
     let (cmd, partial_path) = if let Some(rest) = buffer.strip_prefix("e ") {
         ("e ", rest)
     } else if let Some(rest) = buffer.strip_prefix("edit ") {
@@ -431,7 +455,7 @@ fn handle_tab_completion(app: &mut App) {
         && !state.candidates.is_empty()
     {
         state.index = (state.index + 1) % state.candidates.len();
-        app.command_buffer = format!("{}{}", cmd, state.candidates[state.index]);
+        app.line_input = tui_input::Input::new(format!("{}{}", cmd, state.candidates[state.index]));
         return;
     }
 
@@ -445,11 +469,11 @@ fn handle_tab_completion(app: &mut App) {
 
     if candidates.len() == 1 {
         // Single match - complete it
-        app.command_buffer = format!("{}{}", cmd, candidates[0]);
+        app.line_input = tui_input::Input::new(format!("{}{}", cmd, candidates[0]));
         app.completion = None;
     } else {
         // Multiple matches - start cycling
-        app.command_buffer = format!("{}{}", cmd, candidates[0]);
+        app.line_input = tui_input::Input::new(format!("{}{}", cmd, candidates[0]));
         app.completion = Some(CompletionState {
             candidates,
             index: 0,
@@ -533,14 +557,14 @@ fn handle_search_mode(app: &mut App, key: KeyEvent) {
             app.enter_normal_mode();
         }
         KeyCode::Enter => {
+            // Commit the live-edited value as the search pattern before searching.
+            app.search.pattern = app.line_input.value().to_string();
             app.execute_search();
             app.enter_normal_mode();
         }
-        KeyCode::Backspace => {
-            app.search.pattern.pop();
-            if app.search.pattern.is_empty() {
-                app.enter_normal_mode();
-            }
+        // Backspace on an empty line exits search mode (vim-like).
+        KeyCode::Backspace if app.line_input.value().is_empty() => {
+            app.enter_normal_mode();
         }
         KeyCode::Up => {
             app.search_history_prev();
@@ -548,10 +572,11 @@ fn handle_search_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Down => {
             app.search_history_next();
         }
-        KeyCode::Char(c) => {
-            app.search.pattern.push(c);
+        // All other keys (chars, Backspace, cursor movement) go to the
+        // cursor-aware line editor.
+        _ => {
+            app.line_input.handle_event(&Event::Key(key));
         }
-        _ => {}
     }
 }
 
