@@ -291,6 +291,11 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
             }
         }
 
+        // Advance any background clustering job (animate spinner / apply result).
+        // The 100ms poll above returns immediately on input, so this still runs
+        // frequently enough to animate the spinner even when the user is idle.
+        app.poll_clustering();
+
         if app.should_quit {
             return Ok(());
         }
